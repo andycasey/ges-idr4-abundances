@@ -70,8 +70,8 @@ Figures for each element
 Systematics in stellar parameters?
 ----------------------------------
 
-- [ ] All abundances for this element (y-axis) against effective temperature (x-axis)
-- [ ] All abundances for this element (x-axis) against surface gravity (x-axis)
+- [X] All abundances for this element (y-axis) against effective temperature (x-axis)
+- [X] All abundances for this element (x-axis) against surface gravity (x-axis)
 
 
 Qualitative comparisons against existing studies
