@@ -4,10 +4,10 @@ Abundance Homogenisation Plan
 Element order
 =============
 
--SI1: Neutral Silicon Abundance
--SI2: Ionised Silicon Abundance
--SI3: Doubly Ionised Silicon Abundance
--SI4: Triply Ionised Silicon Abundance
+- SI1: Neutral Silicon Abundance
+- SI2: Ionised Silicon Abundance
+- SI3: Doubly Ionised Silicon Abundance
+- SI4: Triply Ionised Silicon Abundance
 
 -MG1: Neutral Magnesium Abundance
 -CA1: Neutral Calcium Abundance
