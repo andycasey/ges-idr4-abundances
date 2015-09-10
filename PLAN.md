@@ -8,20 +8,17 @@ Element order
 - SI2: Ionised Silicon Abundance
 - SI3: Doubly Ionised Silicon Abundance
 - SI4: Triply Ionised Silicon Abundance
-
 - MG1: Neutral Magnesium Abundance
 - CA1: Neutral Calcium Abundance
 - CA2: Ionised Calcium Abundance
 - AL1: Neutral Aluminium Abundance
 - AL3: Doubly Ionised Aluminium Abundance
 - NA1: Neutral Sodium Abundance
-
 - S1: Neutral Sulfur Abundance
 - S2: Ionised Sulfur Abundance
 - S3: Doubly Ionised Sulfur Abundance
 - NE1: Neutral Neon Abundance
 - NE2: Ionised Neon Abundance
-
 - NI1: Neutral Nickel Abundance
 - ZN1: Neutral Zinc Abundance
 - CR1: Neutral Chromium Abundance
@@ -33,26 +30,19 @@ Element order
 - MN1: Neutral Manganese Abundance
 - ZR1: Neutral Zirconium Abundance
 - ZR2: Ionised Zirconium Abundance
-
 - V1: Neutral Vanadium Abundance
 - V2: Ionised Vanadium Abundance
-
 - O1: Neutral Oxygen Abundance
 - O2: Ionised Oxygen Abundance
-
 - TI1: Neutral Titanium Abundance
 - TI2: Ionised Titanium Abundance
-
 - FE1: Neutral Iron Abundance
 - FE2: Ionised Iron Abundance
 - FE3: Doubly Ionised Iron Abundance
-
 - LA2: Ionised Lathanum Abundance
 - BA2: Ionised Barium Abundance
-
 - Y1: Neutral Yttrium Abundance
 - Y2: Ionised Yttrium Abundance
-
 - C1: Neutral Carbon Abundance
 - C2: Ionised Carbon Abundance
 - C3: Doubly Ionised Carbon Abundance
@@ -60,9 +50,7 @@ Element order
 - N_CN: Nitrogen Abundance from CN Molecular Bands
 - N2: Ionised Nitrogen Abundance
 - N3: Doubly Ionised Nitrogen Abundance
-
 - LI1: Neutral Lithium Abundance in log$\epsilon$(X)
-
 - RU1: Neutral Ruthenium Abundance
 - SR1: Neutral Strontium Abundance
 - DY2: Ionised Dysprosium Abundance
@@ -74,7 +62,6 @@ Element order
 - EU2: Ionised Europium Abundance
 - GD2: Ionised Gadolinium Abundance
 - SM2: Ionised Samarium Abundance
-
 
 
 Figures for each element
