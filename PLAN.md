@@ -36,7 +36,7 @@ Line-to-line scatter
 - Residuals of one line abundance compared to mean abundance (y-axis) against radial velocity (x-axis) to look for lines impacted by tellurics
 - Histogram showing the percentile of one line abundance with respect to the distribution of abundances for a given star. This should show "where" a line always sits in a distribution of abundances for a given line (is it always high, always low, or spread everywhere?)
 - Node-to-node scatter for one line compared to the node-to-node scatter for an element (show as histograms) 
-
+- Are some lines saturating (and the broadening not being treated correctly)? Show node-to-node scatter for a given line (y-axis) with respect to the reduced equivalent width
 
 Node-to-node scatter
 --------------------
