@@ -9,71 +9,71 @@ Element order
 - SI3: Doubly Ionised Silicon Abundance
 - SI4: Triply Ionised Silicon Abundance
 
--MG1: Neutral Magnesium Abundance
--CA1: Neutral Calcium Abundance
--CA2: Ionised Calcium Abundance
--AL1: Neutral Aluminium Abundance
--AL3: Doubly Ionised Aluminium Abundance
--NA1: Neutral Sodium Abundance
+- MG1: Neutral Magnesium Abundance
+- CA1: Neutral Calcium Abundance
+- CA2: Ionised Calcium Abundance
+- AL1: Neutral Aluminium Abundance
+- AL3: Doubly Ionised Aluminium Abundance
+- NA1: Neutral Sodium Abundance
 
--S1: Neutral Sulfur Abundance
--S2: Ionised Sulfur Abundance
--S3: Doubly Ionised Sulfur Abundance
--NE1: Neutral Neon Abundance
--NE2: Ionised Neon Abundance
+- S1: Neutral Sulfur Abundance
+- S2: Ionised Sulfur Abundance
+- S3: Doubly Ionised Sulfur Abundance
+- NE1: Neutral Neon Abundance
+- NE2: Ionised Neon Abundance
 
--NI1: Neutral Nickel Abundance
--ZN1: Neutral Zinc Abundance
--CR1: Neutral Chromium Abundance
--CR2: Ionised Chromium Abundance
--SC1: Neutral Scandium Abundance
--SC2: Ionised Scandium Abundance
--CU1: Neutral Copper Abundance
--CO1: Neutral Cobalt Abundance
--MN1: Neutral Manganese Abundance
--ZR1: Neutral Zirconium Abundance
--ZR2: Ionised Zirconium Abundance
+- NI1: Neutral Nickel Abundance
+- ZN1: Neutral Zinc Abundance
+- CR1: Neutral Chromium Abundance
+- CR2: Ionised Chromium Abundance
+- SC1: Neutral Scandium Abundance
+- SC2: Ionised Scandium Abundance
+- CU1: Neutral Copper Abundance
+- CO1: Neutral Cobalt Abundance
+- MN1: Neutral Manganese Abundance
+- ZR1: Neutral Zirconium Abundance
+- ZR2: Ionised Zirconium Abundance
 
--V1: Neutral Vanadium Abundance
--V2: Ionised Vanadium Abundance
+- V1: Neutral Vanadium Abundance
+- V2: Ionised Vanadium Abundance
 
--O1: Neutral Oxygen Abundance
--O2: Ionised Oxygen Abundance
+- O1: Neutral Oxygen Abundance
+- O2: Ionised Oxygen Abundance
 
--TI1: Neutral Titanium Abundance
--TI2: Ionised Titanium Abundance
+- TI1: Neutral Titanium Abundance
+- TI2: Ionised Titanium Abundance
 
--FE1: Neutral Iron Abundance
--FE2: Ionised Iron Abundance
--FE3: Doubly Ionised Iron Abundance
+- FE1: Neutral Iron Abundance
+- FE2: Ionised Iron Abundance
+- FE3: Doubly Ionised Iron Abundance
 
--LA2: Ionised Lathanum Abundance
--BA2: Ionised Barium Abundance
+- LA2: Ionised Lathanum Abundance
+- BA2: Ionised Barium Abundance
 
--Y1: Neutral Yttrium Abundance
--Y2: Ionised Yttrium Abundance
+- Y1: Neutral Yttrium Abundance
+- Y2: Ionised Yttrium Abundance
 
--C1: Neutral Carbon Abundance
--C2: Ionised Carbon Abundance
--C3: Doubly Ionised Carbon Abundance
--C_C2: Carbon Abundance from C2 Molecular Bands
--N_CN: Nitrogen Abundance from CN Molecular Bands
--N2: Ionised Nitrogen Abundance
--N3: Doubly Ionised Nitrogen Abundance
+- C1: Neutral Carbon Abundance
+- C2: Ionised Carbon Abundance
+- C3: Doubly Ionised Carbon Abundance
+- C_C2: Carbon Abundance from C2 Molecular Bands
+- N_CN: Nitrogen Abundance from CN Molecular Bands
+- N2: Ionised Nitrogen Abundance
+- N3: Doubly Ionised Nitrogen Abundance
 
--LI1: Neutral Lithium Abundance in log$\epsilon$(X)
+- LI1: Neutral Lithium Abundance in log$\epsilon$(X)
 
--RU1: Neutral Ruthenium Abundance
--SR1: Neutral Strontium Abundance
--DY2: Ionised Dysprosium Abundance
--CE2: Ionised Cerium Abundance
--PR2: Ionised Praseodymium Abundance
--NB1: Neutral Niobium Abundance
--ND2: Ionised Neodymium Abundance
--MO1: Neutral Molybdenum Abundance
--EU2: Ionised Europium Abundance
--GD2: Ionised Gadolinium Abundance
--sSM2: Ionised Samarium Abundance
+- RU1: Neutral Ruthenium Abundance
+- SR1: Neutral Strontium Abundance
+- DY2: Ionised Dysprosium Abundance
+- CE2: Ionised Cerium Abundance
+- PR2: Ionised Praseodymium Abundance
+- NB1: Neutral Niobium Abundance
+- ND2: Ionised Neodymium Abundance
+- MO1: Neutral Molybdenum Abundance
+- EU2: Ionised Europium Abundance
+- GD2: Ionised Gadolinium Abundance
+- SM2: Ionised Samarium Abundance
 
 
 
