@@ -599,10 +599,13 @@ if __name__ == "__main__":
     from glob import glob
     files = glob("data/MyGIsFOS/*.dat") + glob("data/EPINARBO/*.dat")
 
+    what = []
     cursor = connection.cursor()
     for filename in files:
         print(filename)
         line_abundances = parse_line_abundances(filename)
+        if len(line_abundances) == 0: continue
+
         k = line_abundances[0].keys()
         cursor.executemany("""INSERT INTO line_abundances({0}) VALUES ({1})"""\
             .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
@@ -645,5 +648,8 @@ if __name__ == "__main__":
 
     connection.commit()
     connection.close()
+
+    print("WHAT IS ")
+    print(what)
 
     raise a
