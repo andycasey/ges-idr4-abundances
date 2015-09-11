@@ -105,6 +105,6 @@ Equivalent widths
 Which lines were used?
 ----------------------
 
-- [ ] Heat map showing all the lines used for a given element.
+- [X] Heat map showing all the lines used for a given element (`plot.transition_heatmap`)
 - [ ] Heat map showing all the lines used for a given element, coloured by the logarithm of the line-to-line scatter.
 
