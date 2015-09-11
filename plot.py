@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from colormaps import (magma, inferno, plasma, viridis)
 
+import numpy as np
+from astropy.table import Table
+
 
 def label(text_label):
     return text_label.replace("_", "-")
@@ -53,6 +56,7 @@ def node_element_abundance_against_stellar_parameters(node, element,
         str
     """
 
+
     element = element.upper()
 
     data = node[2].data
@@ -81,8 +85,10 @@ def node_element_abundance_against_stellar_parameters(node, element,
 
     # Title.
     ax_teff.set_title("GES {release} {node} ({instrument} {date})".format(
-        release=node[0].header["RELEASE"], date=node[0].header["DATETAB"],
-        instrument=node[0].header["INSTRUME"], node=node[0].header["NODE1"]))
+        release=node[0].header.get("RELEASE", "iDR4?"),
+        date=node[0].header.get("DATETAB", "UNKNOWN DATE"),
+        instrument=node[0].header.get("INSTRUME", "UNKNOWN INSTRUMENT"),
+        node=node[0].header["NODE1"]))
 
     fig.tight_layout()
 
@@ -93,13 +99,137 @@ def node_element_abundance_against_stellar_parameters(node, element,
     return fig
 
 
+def retrieve_table(database, query, values=None):
+
+    cursor = database.cursor()
+    cursor.execute(query, values)
+    names = [_[0] for _ in cursor.description]
+    results = cursor.fetchall()
+    if len(results) > 0:
+        t = Table(rows=results, names=names)
+        cursor.close()
+        return t
+    return None
+
+
+def transition_heatmap(database, element, ion, column="abundance", linear=False,
+    **kwargs): 
+    """
+    Display a heatmap of lines that were used for a given species.
+
+    :param database:
+        A PostgreSQL database connection.
+
+    :param element:
+        The name of the element to display.
+
+    :type element:
+        str
+
+    :param ion:
+        The ionisation state of the element (1 = neutral).
+
+    :type ion:
+        int
+
+    :param column: [optional]
+        The column name to display the heat map for. Default is abundance.
+
+    :type column:
+        str
+    """
+
+    # Retrieve all line abundances for this element and ion.
+    data = retrieve_table(database,
+        "SELECT * FROM line_abundances WHERE element = %s and ion = %s",
+        (element, ion))
+    if data is None: return
+
+    column = column.lower()
+    if column not in data.dtype.names:
+        raise ValueError("column '{0}' does not exist".format(column))
+
+    # Identify the unique nodes and wavelengths.
+    nodes = sorted(set(data["node"]))
+    wavelengths = sorted(set(data["wavelength"]))
+    N_nodes, N_wavelengths = map(len, (nodes, wavelengths))
+
+    # Build a count map array.
+    count = np.zeros((N_nodes, N_wavelengths))
+    for i, node in enumerate(nodes):
+        for j, wavelength in enumerate(wavelengths):
+            count[i, j] = np.sum(np.isfinite(data[column][
+                (data["wavelength"] == wavelength) * (data["node"] == node) \
+                    * (data["upper_{}".format(column)] == 0)]))
+    kwds = {
+        "aspect": "auto",
+        "cmap": plasma,
+        "interpolation": "nearest"
+    }
+    kwds.update(kwargs)
+
+    fig, ax = plt.subplots(
+        figsize=(6.5 + N_wavelengths * 0.25, 2 + N_nodes * 0.25))
+    if linear:
+        # Create the wavelength map.
+        px = np.diff(wavelengths).min()
+        wavelength_map = np.arange(min(wavelengths), max(wavelengths) + px, px)
+
+        # Fill in the values.
+        heat_map = np.nan * np.ones((N_nodes, len(wavelength_map), 1))
+        for i in range(N_nodes):
+            for j, wavelength in enumerate(wavelengths):
+                index = wavelength_map.searchsorted(wavelength)
+                heat_map[i, index, :] = count[i, j]
+
+
+        raise NotImplementedError
+
+    else:
+        image = ax.imshow(count, **kwds)
+
+    ax.set_xlabel(r"Wavelength $[\AA]$")
+    ax.set_title("{element} {ion} (measured {column})".format(element=element,
+        ion=ion, column=column))
+
+    ax.set_xticks(np.arange(N_wavelengths) - 0.5)
+    ax.set_xticklabels(["{0:.1f}".format(_) for _ in wavelengths],
+        rotation=45)
+
+    ax.set_yticks(np.arange(N_nodes))
+    ax.set_yticklabels(nodes)
+
+    ax.xaxis.set_tick_params(width=0)
+    ax.yaxis.set_tick_params(width=0)
+
+
+    fig.tight_layout()
+
+    cbar = plt.colorbar(image, ax=[ax])
+    cbar.locator = MaxNLocator(3)
+    cbar.update_ticks()
+    cbar.ax.set_aspect(2)
+
+
+    return fig
+
+
+
 
 if __name__ == "__main__":
 
+
+    """
     from data import load_node
 
     d = load_node("data/GES_iDR4_WG11_MyGIsFOS.fits")
-
     f = node_element_abundance_against_stellar_parameters(d, "SI1")
+    """
 
+    import psycopg2 as pg
+    db = pg.connect(dbname="arc")
+    transition_heatmap(db, "Si", 1)
+    transition_heatmap(db, "Si", 2)
+    #transition_heatmap(db, "Fe", 1)
+    #transition_heatmap(db, "Fe", 2)
     raise a
