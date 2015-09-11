@@ -209,6 +209,7 @@ def transition_heatmap(database, element, ion, column="abundance", linear=False,
     cbar.locator = MaxNLocator(3)
     cbar.update_ticks()
     cbar.ax.set_aspect(2)
+    cbar.set_label(r"$N$")
 
 
     return fig
