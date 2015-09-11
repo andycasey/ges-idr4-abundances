@@ -614,6 +614,9 @@ if __name__ == "__main__":
             %(measurement_type)s, %(object)s, %(e_ew)s, %(filename)s, %(ion)s,
             %(e_abundance)s, %(cname)s, %(element)s, %(wavelength)s, %(ew)s,
             %(upper_ew)s)""", line_abundances)
-    
+
     cursor.close()
+    connection.commit()
+    connection.close()
+
     raise a
