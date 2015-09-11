@@ -578,9 +578,9 @@ def create_tables(connection):
         e_gamma real,
         convol real,
         e_convol real,
-        peculi char(1),
-        remark char(1),
-        tech char(20)
+        peculi char(300),
+        remark char(300),
+        tech char(300)
         );""")
     cursor.close()
 
@@ -589,33 +589,60 @@ def create_tables(connection):
 
 if __name__ == "__main__":
 
-    # Create a MyGISFOs_line_abundance table
-    # Create a MyGISFOs_stars table
-    # 
 
     import psycopg2 as pg
+    from glob import glob
 
     connection = pg.connect(dbname="arc")
     create_tables(connection)
 
-    cursor = connection.cursor()
-
-
     from glob import glob
     files = glob("data/MyGIsFOS/*.dat") + glob("data/EPINARBO/*.dat")
 
+    cursor = connection.cursor()
     for filename in files:
         print(filename)
         line_abundances = parse_line_abundances(filename)
-        cursor.executemany("""INSERT INTO line_abundances(node, abundance, code,
-            upper_abundance, measurement_type, object, e_ew, filename, ion, 
-            e_abundance, cname, element, wavelength, ew, upper_ew) VALUES (
-            %(node)s, %(abundance)s, %(code)s, %(upper_abundance)s,
-            %(measurement_type)s, %(object)s, %(e_ew)s, %(filename)s, %(ion)s,
-            %(e_abundance)s, %(cname)s, %(element)s, %(wavelength)s, %(ew)s,
-            %(upper_ew)s)""", line_abundances)
-
+        k = line_abundances[0].keys()
+        cursor.executemany("""INSERT INTO line_abundances({0}) VALUES ({1})"""\
+            .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
+            line_abundances)
     cursor.close()
+    
+    cursor = connection.cursor()
+    from astropy.io import fits
+    filenames = glob("data/*.fits")
+    filenames = list(set(filenames).difference(["data/GES_iDR4_WG11_EPINARBO.fits"]))
+    for filename in filenames:
+        image = fits.open(filename)
+
+        print("Preparing from {}".format(filename))
+
+        rows = []
+        default_row = {"node": filename.split("_")[-1].split(".")[0]}
+        for i, line in enumerate(image[2].data.base):
+            row = {}
+            row.update(default_row)
+            row.update({ k: v for k, v in zip(image[2].data.dtype.names, line.tolist())})
+            # Clean up strings because fuck.
+            for k in row:
+                if isinstance(row[k], (str, unicode)):
+                    row[k] = row[k].strip()
+            rows.append(row)
+
+        print("Inserting from {}".format(filename))
+
+        k = rows[0].keys()
+        for i in range(len(rows)/2):
+            r = rows[2*i:2*i+2] # Just in case something breaks.
+            cursor.executemany("""INSERT INTO node_results ({0}) VALUES ({1})"""\
+                .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
+                r)
+
+        print("Done")
+    cursor.close()
+
+
     connection.commit()
     connection.close()
 
