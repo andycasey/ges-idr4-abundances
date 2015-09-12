@@ -3,7 +3,6 @@
 """ Load the Gaia-ESO Survey iDR4 node abundances. """
 
 from glob import glob
-from astropy.io import fits
 
 def get_elements(extension):
     """
@@ -14,7 +13,3 @@ def get_elements(extension):
         if "Abundance" in comment }
     
 
-
-def load_node(filename):
-
-    return fits.open(filename)
