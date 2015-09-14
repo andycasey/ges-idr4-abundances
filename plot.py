@@ -259,17 +259,27 @@ def tellurics(database, vel_bin=1, wavelength_bin=0.5,
 
         # Match to cname
         v_index = np.where(vel_data["cname"] == line["cname"])[0]
-        assert len(v_index) == 1
+        #assert len(v_index) == 1
 
         i_index = wavelengths.searchsorted(line["wavelength"]) - 1
-        j_index = velocities.searchsorted(vel_data["vel"][v_index[0]]) - 1
+        j_index = velocities.searchsorted(np.nanmean(vel_data["vel"][v_index])) - 1
 
         # OK, now that we know where it is, let's calculate the abundance offset
         # for this line with respect to all other lines of the same species 
-        comparison_data = retrieve_table(database, 
-            """SELECT abundance FROM line_abundances WHERE element = %s and 
-            ion = %s and filename = %s and upper_abundance = 0""",
-            (line["element"], line["ion"], line["filename"]))
+
+        indices = \
+            (line_data["filename"] == line["filename"]) * \
+            (line_data["element"] == line["element"]) * \
+            (line_data["ion"] == line["ion"]) * \
+            (line_data["upper_abundance"] == 0)
+
+        comparison_data = line_data[indices]
+
+
+        #comparison_data = retrieve_table(database, 
+        #    """SELECT abundance FROM line_abundances WHERE element = %s and 
+        #    ion = %s and filename = %s and upper_abundance = 0""",
+        #    (line["element"], line["ion"], line["filename"]))
 
         if len(comparison_data) == 1: continue        
 
@@ -284,8 +294,8 @@ def tellurics(database, vel_bin=1, wavelength_bin=0.5,
     raise a
 
 
-def abundance_covariance(database, element, ion, node=None, column="abundance",
-    **kwargs):
+def transition_covariance(database, element, ion, node=None, column="abundance",
+    vmin=None, vmax=None, **kwargs):
     """
     Show the covariance in all line abundances for a given species.
     """
@@ -295,9 +305,12 @@ def abundance_covariance(database, element, ion, node=None, column="abundance",
     else:
         query_suffix, args_suffix = " AND node = %s", [node]
 
+    column = column.lower()
+    if column not in ("ew", "abundance"):
+        raise ValueError("column must be ew or abundance")
 
     args = [element, ion] + args_suffix
-    data = retrieve_table(database, """SELECT wavelength, filename, abundance 
+    data = retrieve_table(database, """SELECT wavelength, filename, ew, abundance 
         FROM line_abundances WHERE element = %s and ion = %s""" + query_suffix,
          args)
     if data is None: return None
@@ -317,18 +330,16 @@ def abundance_covariance(database, element, ion, node=None, column="abundance",
     for i, filename in enumerate(filenames):
         for j, wavelength in enumerate(wavelengths):
             #print(i * len(wavelengths) + j, X.size)
-
             indices = (data["filename"] == filename) \
                 * (data["wavelength"] == wavelength)
             if indices.sum() > 0:
                 if indices.sum() > 1:
                     print("Warning: {0} matches: {1}".format(indices.sum(),
-                        data["abundance"][indices]))
+                        data[column][indices]))
                     _ = "{0}.{1}".format(filename, wavelength)
                     extra_matches[_] = indices.sum()
-                    std_devs[_] = np.nanstd(data["abundance"][indices])
-                X[i, j] = np.nanmean(data["abundance"][indices])
-
+                    std_devs[_] = np.nanstd(data[column][indices])
+                X[i, j] = np.nanmean(data[column][indices])
 
     X = np.ma.array(X, mask=~np.isfinite(X))
     cov = np.ma.cov(X.T)
@@ -337,6 +348,8 @@ def abundance_covariance(database, element, ion, node=None, column="abundance",
         "aspect": "auto",
         "cmap": plasma,
         "interpolation": "nearest",
+        "vmin": vmin,
+        "vmax": vmax
     }
     kwds.update(kwargs)
     fig, ax = plt.subplots()
@@ -345,12 +358,17 @@ def abundance_covariance(database, element, ion, node=None, column="abundance",
     image = ax.imshow(cov, **kwds)
     
     _ = np.arange(len(wavelengths)) + 0.5
+    ax.set_xticks(_, minor=True)
+    ax.set_yticks(_, minor=True)
     ax.set_xticks(_)
-    ax.set_yticks(_)
+    ax.set_yticks(_ + 0.5)
+    ax.xaxis.set_tick_params(width=0, which="major")
+    ax.yaxis.set_tick_params(width=0, which="major")
     ax.set_xticklabels(["{0:.1f}".format(_) for _ in wavelengths], rotation=45)
-    ax.set_yticklabels(["{0:.1f}".format(_) for _ in wavelengths], rotation=45)
-    ax.set_xlim(0.5, len(wavelengths) - 0.5)
-    ax.set_ylim(0.5, len(wavelengths) - 0.5)
+    ax.set_yticklabels(["{0:.1f}".format(_) for _ in wavelengths], rotation=0)
+    
+    ax.set_xlim(0.5, len(wavelengths) + 0.5)
+    ax.set_ylim(0.5, len(wavelengths) + 0.5)
     ax.set_xlabel(r"Wavelength $[\AA]$")
     ax.set_ylabel(r"Wavelength $[\AA]$")
 
@@ -358,16 +376,9 @@ def abundance_covariance(database, element, ion, node=None, column="abundance",
         element=element, ion=ion, column=column, node=node or "All nodes"))
 
     fig.tight_layout()
-
     cbar = plt.colorbar(image, ax=[ax])
-    #cbar.set_label(r"$\sigma")
-
     return fig
 
-    raise a
-    #line_data = retrieve_table(line_database,
-    #    "SELECT * FROM line_abundances WHERE element = %s and ion = %s",
-    #    (element, ion))
 
 
 if __name__ == "__main__":
@@ -384,7 +395,7 @@ if __name__ == "__main__":
     db = pg.connect(dbname="arc")
 
     #tellurics(db)#, "Si", 1)
-    abundance_covariance(db, "Si", 1)
+    transition_covariance(db, "Si", 1)
 
     raise a
     #

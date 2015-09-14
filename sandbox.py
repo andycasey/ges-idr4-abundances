@@ -34,6 +34,8 @@ if __name__ == "__main__":
     figures = {
         "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
         "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
+        "abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
+        "ew-covariance": (plot.transition_covariance, {"column": "ew"}),
     }
     database = pg.connect(dbname="arc")
     if not os.path.exists(directory): os.mkdir(directory)
