@@ -284,7 +284,8 @@ def tellurics(database, vel_bin=1, wavelength_bin=0.5,
     raise a
 
 
-def abundance_covariance(database, element, ion, node=None):
+def abundance_covariance(database, element, ion, node=None, column="abundance",
+    **kwargs):
     """
     Show the covariance in all line abundances for a given species.
     """
@@ -306,7 +307,9 @@ def abundance_covariance(database, element, ion, node=None):
         line_abundances WHERE element = %s AND ion = %s""" + query_suffix, args)
     wavelengths = retrieve_table(database, """SELECT DISTINCT(wavelength) FROM
         line_abundances WHERE element = %s AND ion = %s""" + query_suffix, args)
-    filenames, wavelengths = filenames["filename"], wavelengths["wavelength"]
+    
+    filenames = filenames["filename"]
+    wavelengths = np.sort(wavelengths["wavelength"])
 
     extra_matches = {}
     std_devs = {}
@@ -321,11 +324,45 @@ def abundance_covariance(database, element, ion, node=None):
                 if indices.sum() > 1:
                     print("Warning: {0} matches: {1}".format(indices.sum(),
                         data["abundance"][indices]))
-                    _ = "{0}.{1}".format(data["filename"], data["wavelength"])
+                    _ = "{0}.{1}".format(filename, wavelength)
                     extra_matches[_] = indices.sum()
                     std_devs[_] = np.nanstd(data["abundance"][indices])
                 X[i, j] = np.nanmean(data["abundance"][indices])
 
+
+    X = np.ma.array(X, mask=~np.isfinite(X))
+    cov = np.ma.cov(X.T)
+
+    kwds = {
+        "aspect": "auto",
+        "cmap": plasma,
+        "interpolation": "nearest",
+    }
+    kwds.update(kwargs)
+    fig, ax = plt.subplots()
+
+    ax.patch.set_facecolor("#CCCCCC")
+    image = ax.imshow(cov, **kwds)
+    
+    _ = np.arange(len(wavelengths)) + 0.5
+    ax.set_xticks(_)
+    ax.set_yticks(_)
+    ax.set_xticklabels(["{0:.1f}".format(_) for _ in wavelengths], rotation=45)
+    ax.set_yticklabels(["{0:.1f}".format(_) for _ in wavelengths], rotation=45)
+    ax.set_xlim(0.5, len(wavelengths) - 0.5)
+    ax.set_ylim(0.5, len(wavelengths) - 0.5)
+    ax.set_xlabel(r"Wavelength $[\AA]$")
+    ax.set_ylabel(r"Wavelength $[\AA]$")
+
+    ax.set_title("{node} {element} {ion} (measured {column})".format(
+        element=element, ion=ion, column=column, node=node or "All nodes"))
+
+    fig.tight_layout()
+
+    cbar = plt.colorbar(image, ax=[ax])
+    #cbar.set_label(r"$\sigma")
+
+    return fig
 
     raise a
     #line_data = retrieve_table(line_database,
@@ -348,6 +385,9 @@ if __name__ == "__main__":
 
     #tellurics(db)#, "Si", 1)
     abundance_covariance(db, "Si", 1)
+
+    raise a
+    #
 
     transition_heatmap(db, "Si", 1)
     transition_heatmap(db, "Si", 2)
