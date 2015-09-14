@@ -341,6 +341,8 @@ def transition_covariance(database, element, ion, node=None, column="abundance",
                     std_devs[_] = np.nanstd(data[column][indices])
                 X[i, j] = np.nanmean(data[column][indices])
 
+    # If there are *no* finite measurements in a row, skip it.
+    X = X[np.any(np.isfinite(X), axis=1)]
     X = np.ma.array(X, mask=~np.isfinite(X))
     cov = np.ma.cov(X.T)
 
