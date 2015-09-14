@@ -233,81 +233,73 @@ def transition_heatmap(database, element, ion, column="abundance", linear=False,
     return fig
 
 
-def tellurics(database, vel_bin=1, wavelength_bin=0.5,
-    vel_range=(-300, 300)):
+def tellurics(database, velocity_bin=1, wavelength_bin=0.5,
+    velocity_range=(-300, 300)):
+    """
+    Show the average sigma deviation of all lines as a function of rest
+    wavelength and measured velocity. Seeing 'lines' in this space can be
+    informative as to whether there are transitions to remove due to tellurics.
+    """
+   
 
-    #line_data = retrieve_table(line_database,
-    #    "SELECT * FROM line_abundances WHERE element = %s and ion = %s",
-    #    (element, ion))
-    line_data = retrieve_table(database, "SELECT * FROM line_abundances")
-    if line_data is None: return
-    N_lines = len(line_data)
+    #data = retrieve_table(database, """SELECT l.*, n.vel
+    #    FROM line_abundances l JOIN node_results n ON l.cname = n.cname""")
+
+    line_abundances = retrieve_table(database, """SELECT * from line_abundances
+        WHERE node = 'Lumba     ' ORDER BY cname, element, ion""")
+    assert len(line_abundances) > 0
+
+    node_results = retrieve_table(database, """SELECT DISTINCT ON (cname)
+        cname, vel FROM node_results ORDER BY cname, vel""")
+
+    velocity_range = velocity_range or [None, None]
+    if velocity_range[0] is None:
+        velocity_range[0] = np.nanmin(node_results["vel"])
+    if velocity_range[1] is None:
+        velocity_range[1] = np.nanmax(node_results["vel"])
 
     # Create a map for the velocity and wavelength bins.
-    wavelengths = np.arange(line_data["wavelength"].min(),
-        line_data["wavelength"].max() + wavelength_bin, wavelength_bin)
+    wavelengths = np.arange(line_abundances["wavelength"].min(),
+        line_abundances["wavelength"].max() + wavelength_bin, wavelength_bin)
+    velocities = np.arange(velocity_range[0], velocity_range[1], velocity_bin)
 
-    # Get all the velocities.
-    # Just get one of the nodes.
-    cursor = database.cursor()
-    cursor.execute("SELECT DISTINCT(node) from node_results LIMIT 1")
-    node = cursor.fetchone()
-    cursor.close()
+    line_abundances = line_abundances.group_by(["cname", "element", "ion"])
+    means = line_abundances["abundance"].groups.aggregate(np.nanmean)
+    stds = line_abundances["abundance"].groups.aggregate(np.nanstd)
 
-    vel_data = retrieve_table(database,
-        "SELECT cname, vel, node FROM node_results WHERE node = %s", (node, ))
+    data = -1000 * np.ones((wavelengths.size, velocities.size))
+    for i, (group, mean, std) in enumerate(zip(line_abundances.groups, means, stds)):
+        if not np.all(np.isfinite([mean, std])):
+            continue
+        print(i)
+        N = len(group)
 
-    vel_range = [None, None] if vel_range is None else list(vel_range)
-    if vel_range[0] is None: vel_range[0] = np.nanmin(vel_data["vel"])
-    if vel_range[1] is None: vel_range[1] = np.nanmax(vel_data["vel"])
+        for k in range(N):
+            if not np.isfinite(group["abundance"][k]): continue
 
-    velocities = np.arange(vel_range[0], vel_range[1], vel_bin)
+            # Get a matching velocity.
+            match = group["cname"][k] == node_results["cname"]
+            velocity = node_results["vel"][match][0]
 
-    abundance_stddev = np.zeros((wavelengths.size, velocities.size))
-    N = abundance_stddev.copy()
+            i_index = wavelengths.searchsorted(group["wavelength"][k])
+            j_index = velocities.searchsorted(velocity)
 
-    # For each abundance line, match to CNAME, find which bin it is in,
-    # calculate.
+            if i_index >= data.shape[0] or j_index >= data.shape[1]: continue
 
-    for i, line in enumerate(line_data):
+            value = (group["abundance"][k] - mean)/std
+            if np.isfinite(value):
+                data[i_index, j_index] = np.nanmax([
+                    data[i_index, j_index],
+                    value])
+            print(k, N)
 
-        print("{0}/{1}".format(i, N_lines))
-
-        # Match to cname
-        v_index = np.where(vel_data["cname"] == line["cname"])[0]
-        #assert len(v_index) == 1
-
-        i_index = wavelengths.searchsorted(line["wavelength"]) - 1
-        j_index = velocities.searchsorted(np.nanmean(vel_data["vel"][v_index])) - 1
-
-        # OK, now that we know where it is, let's calculate the abundance offset
-        # for this line with respect to all other lines of the same species 
-
-        indices = \
-            (line_data["filename"] == line["filename"]) * \
-            (line_data["element"] == line["element"]) * \
-            (line_data["ion"] == line["ion"]) * \
-            (line_data["upper_abundance"] == 0)
-
-        comparison_data = line_data[indices]
-
-
-        #comparison_data = retrieve_table(database, 
-        #    """SELECT abundance FROM line_abundances WHERE element = %s and 
-        #    ion = %s and filename = %s and upper_abundance = 0""",
-        #    (line["element"], line["ion"], line["filename"]))
-
-        if len(comparison_data) == 1: continue        
-
-        mean = np.nanmean(comparison_data["abundance"])
-        sigma = np.nanstd(comparison_data["abundance"])
-
-        abundance_stddev[i_index, j_index] += (line["abundance"] - mean)/sigma
-        N[i_index, j_index] += 1
-
-
+    data[data == -1000] = np.nan
+    fig, ax = plt.subplots()
+    ax.imshow(data, cmap=plasma)
 
     raise a
+
+
 
 
 def transition_covariance(database, element, ion, node=None, column="abundance",
@@ -713,7 +705,8 @@ if __name__ == "__main__":
     import psycopg2 as pg
     db = pg.connect(dbname="arc")
 
-    #tellurics(db)#, "Si", 1)
+    tellurics(db)#, "Si", 1)
+    raise a
     #transition_covariance(db, "Si", 1)
     #mean_abundance_against_stellar_parameters(db, "Si", 1)
     #ean_abundance_differences(db, "Si", 2, extent=(6, 9))
