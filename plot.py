@@ -474,8 +474,10 @@ def corner_scatter(data, labels=None, uncertainties=None, extent=None,
             else:
                 [l.set_rotation(45) for l in ax.get_xticklabels()]
                 if labels is not None:
-                    label = labels[j] if i != j else r"$\Delta${}".format(labels[j])
-                    ax.set_xlabel(label)
+                    if i == j:
+                        ax.set_xlabel("{} $-$ $X$".format(labels[j]))
+                    else:
+                        ax.set_xlabel(labels[j])
                     ax.xaxis.set_label_coords(0.5, -0.3)
                 
             if j > 0 or i == j:
