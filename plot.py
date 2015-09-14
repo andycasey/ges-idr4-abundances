@@ -387,7 +387,8 @@ def transition_covariance(database, element, ion, node=None, column="abundance",
 
 
 
-def corner_scatter(data, labels=None, uncertainties=None, extent=None, c=None):
+def corner_scatter(data, labels=None, uncertainties=None, extent=None,
+    color=None, bins=20):
     """
     Create a corner scatter plot showing the differences between each node.
 
@@ -403,7 +404,7 @@ def corner_scatter(data, labels=None, uncertainties=None, extent=None, c=None):
 
     # How many nodes to plot?
     N = data.shape[0]
-    K = N - 1
+    K = N
     assert K > 0, "Need more than one node to compare against."
 
     factor = 2.0           # size of one side of one panel
@@ -420,50 +421,64 @@ def corner_scatter(data, labels=None, uncertainties=None, extent=None, c=None):
     fig.subplots_adjust(left=lb, bottom=lb, right=tr, top=tr,
         wspace=whspace, hspace=whspace)
 
-    # Match all of the nodes
+    hist_kwargs = {
+        "color": "k",
+        "histtype": "step"
+    }
 
+    if extent is None:
+        extent = (0.9 * np.nanmin(data), 1.1 * np.nanmax(data))
+    
+    # Match all of the nodes
     for i in range(N):
         for j in range(N):
-            if j == K: break
-            elif j > i:
+
+            if j > i: # hide.
                 try:
                     ax = axes[i, j]
+                    ax.set_visible(False)
+                    ax.set_frame_on(False)
                 except IndexError:
-                    continue
-                ax.set_visible(False)
-                ax.set_frame_on(False)
+                    None
                 continue
-            if 0 > i-1: continue
-            if K > 1:
-                ax = axes[i-1, j]
-            else:
-                ax = axes
+                
+            ax = axes[i, j]
 
-            if extent is not None:
+            if i == j:
+                indices = np.arange(N)
+                indices = indices[indices != i]
+
+                diff = (data[i] - data[indices]).flatten()
+                diff = diff[np.isfinite(diff)]
+                if diff.size:
+                    ax.hist(diff, bins=bins, **hist_kwargs)
+                
+            else:    
                 ax.plot(extent, extent, "k:", zorder=-100)
+                if uncertainties is not None:
+                    ax.errorbar(data[i], data[j], 
+                        xerr=uncertainties[i], yerr=uncertainties[j],
+                        ecolor="k", aa=True, fmt=None, mec='k', mfc="w", ms=6,
+                        zorder=1, lc="k")
 
-            if uncertainties is not None:
-                ax.errorbar(data[i], data[j], 
-                    xerr=uncertainties[i], yerr=uncertainties[j], ecolor="k", 
-                    aa=True, fmt=None, mec='k', mfc="w", ms=6, zorder=1, lc="k")
-
-            ax.scatter(data[i], data[j], facecolor="w", zorder=100)
-            
-            if extent is not None:
+                ax.scatter(data[i], data[j], c=color or "w", zorder=100)
+                
                 ax.set_xlim(extent)
                 ax.set_ylim(extent)
+
             ax.xaxis.set_major_locator(MaxNLocator(5))
             ax.yaxis.set_major_locator(MaxNLocator(5))
 
-            if i != K:
+            if i < K - 1:
                 ax.set_xticklabels([])
             else:
                 [l.set_rotation(45) for l in ax.get_xticklabels()]
                 if labels is not None:
-                    ax.set_xlabel(labels[j])
+                    label = labels[j] if i != j else r"$\Delta${}".format(labels[j])
+                    ax.set_xlabel(label)
                     ax.xaxis.set_label_coords(0.5, -0.3)
                 
-            if j > 0:
+            if j > 0 or i == j:
                 ax.set_yticklabels([])
             else:
                 [l.set_rotation(45) for l in ax.get_yticklabels()]
@@ -471,23 +486,13 @@ def corner_scatter(data, labels=None, uncertainties=None, extent=None, c=None):
                     ax.set_ylabel(labels[i])
                     ax.yaxis.set_label_coords(-0.3, 0.5)
 
-    # If no extent given, grab the biggest range from anything.
-    if extent is None:
-        lim = (0.9 * np.nanmin(data), 1.1 * np.nanmax(data))
-        
-        # Plot extents
-        [ax.plot(lim, lim, "k:", zorder=-100) for ax in axes.flatten()]
 
-        # Set limits
-        [ax.set_xlim(min(lim), max(lim)) for ax in axes.flatten()]
-        [ax.set_ylim(min(lim), max(lim)) for ax in axes.flatten()]
+    #fig.tight_layout()
 
-    fig.tight_layout()
-    
     return fig
 
 
-def mean_abundance_differences(database, element, ion):
+def mean_abundance_differences(database, element, ion, bins=None):
     """
     Show the mean abundance differences from each node.
     """
@@ -511,14 +516,9 @@ def mean_abundance_differences(database, element, ion):
         Z_uncertainties[i, :] = data["e_{}".format(column)]
         #data_upper[i, :] = data["upper_{}".format(column)]
 
-    fig = corner_scatter(Z, uncertainties=Z_uncertainties,
-        labels=map(str.strip, nodes))
-    return fig
-    # Get colours for REW.
-
-
-    
-    raise a
+    bins = bins or np.arange(-0.50, 0.55, 0.05)
+    return corner_scatter(Z, uncertainties=Z_uncertainties,
+        labels=map(str.strip, nodes), bins=bins)
 
 
     # x-axis = average REW

@@ -32,11 +32,12 @@ if __name__ == "__main__":
 
 
     figures = {
-        "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
-        "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
-        "abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
-        "ew-covariance": (plot.transition_covariance, {"column": "ew"}),
-        "mean-abundance-sp": plot.mean_abundance_against_stellar_parameters,
+    #    "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
+    #    "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
+    #    "abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
+    #    "ew-covariance": (plot.transition_covariance, {"column": "ew"}),
+    #    "mean-abundance-sp": plot.mean_abundance_against_stellar_parameters,
+        "mean-abundance-differences": plot.mean_abundance_differences,
     }
     database = pg.connect(dbname="arc")
     if not os.path.exists(directory): os.mkdir(directory)
