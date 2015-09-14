@@ -16,7 +16,7 @@ def label(text_label):
     return text_label.replace("_", "-")
 
 
-def _scatter_elements(ax, node, x_label, y_label, limits=True, errors=True,
+def _scatter_elements(ax, data, x_label, y_label, limits=True, errors=True,
     color_label=None, **kwargs):
 
     # TODO Show upper limits correctly.
@@ -24,81 +24,75 @@ def _scatter_elements(ax, node, x_label, y_label, limits=True, errors=True,
     # TODO show uncertainties.
 
 
-    elements = [column for _, column, comment in node[2].header.cards \
-        if "Abundance" in comment]
-
     kwds = {
         "c": "#666666",
         "cmap": plasma
     }
     kwds.update(kwargs)
     if color_label is not None:
-        kwds["c"] = node[2].data[color_label]
+        kwds["c"] = data[color_label]
 
-    return ax.scatter(node[2].data[x_label], node[2].data[y_label], **kwds)
-
-
+    return ax.scatter(data[x_label], data[y_label], **kwds)
 
 
-def node_element_abundance_against_stellar_parameters(node, element,
-    limits=True, errors=True):
+def mean_abundance_against_stellar_parameters(database, element, ion, node=None,
+    limits=True, errors=True, **kwargs):
     """
     Plot the reported node abundance against stellar parameters.
 
-    :param node:
-        The node data.
-
-    :type node:
-        FITS image
-
-    :param element:
-        The name of the element to show.
-
-    :type element:
-        str
     """
 
+    if node is None:
+        # Get all the node names.
+        nodes = list(retrieve_table(database,
+            "SELECT DISTINCT(node) from node_results")["node"])
+    else:
+        nodes = [node]
 
-    element = element.upper()
 
-    data = node[2].data
+    figures = {}    
+    column = "{0}{1}".format(element.lower(), ion)
 
-    fig, (ax_teff, ax_logg, ax_feh) = plt.subplots(3)
+    for node in nodes:
 
+        fig, (ax_teff, ax_logg, ax_feh) = plt.subplots(3)
+        data = retrieve_table(database, "SELECT teff, logg, feh, {0}, nl_{0} "\
+            "FROM node_results WHERE node = %s".format(column), (node, ))
 
-    _scatter_elements(ax_teff, node, "TEFF", element,
-        limits=limits, errors=errors, color_label="NL_{}".format(element))
+        _scatter_elements(ax_teff, data, "teff", column, limits=limits,
+            errors=errors, color_label="nl_{}".format(column))
 
-    _scatter_elements(ax_logg, node, "LOGG", element,
-        limits=limits, errors=errors, color_label="NL_{}".format(element))
+        _scatter_elements(ax_logg, data, "logg", column, limits=limits,
+            errors=errors, color_label="nl_{}".format(column))
+        
+        scat = _scatter_elements(ax_feh, data, "feh", column, limits=limits,
+            errors=errors, color_label="nl_{}".format(column))
+        
+        # Labels
+        ax_teff.set_xlabel(label("TEFF"))
+        ax_logg.set_xlabel(label("LOGG"))
+        ax_feh.set_xlabel(label("FEH"))
+        [ax.set_ylabel(label(column.upper())) for ax in fig.axes]
 
-    scat = _scatter_elements(ax_feh, node, "FEH", element,
-            limits=limits, errors=errors, color_label="NL_{}".format(element))
+        for ax in fig.axes:
+            ax.xaxis.set_major_locator(MaxNLocator(6))
+            ax.yaxis.set_major_locator(MaxNLocator(6))
 
-    # Labels
-    ax_teff.set_xlabel(label("TEFF"))
-    ax_logg.set_xlabel(label("LOGG"))
-    ax_feh.set_xlabel(label("FEH"))
-    [ax.set_ylabel(label(element)) for ax in fig.axes]
+        # Title.
+        wg = retrieve_table(database, "SELECT wg from node_results limit 1")
+        ax_teff.set_title("GES {release} {wg} {node}".format(
+            release=kwargs.pop("release", "iDR4"), node=node.strip(),
+            wg=wg["wg"][0]))
 
-    for ax in fig.axes:
-        ax.xaxis.set_major_locator(MaxNLocator(6))
-        ax.yaxis.set_major_locator(MaxNLocator(6))
+        fig.tight_layout()
 
-    # Title.
-    ax_teff.set_title("GES {release} {node} ({instrument} {date})".format(
-        release=node[0].header.get("RELEASE", "iDR4?"),
-        date=node[0].header.get("DATETAB", "UNKNOWN DATE"),
-        instrument=node[0].header.get("INSTRUME", "UNKNOWN INSTRUMENT"),
-        node=node[0].header["NODE1"]))
+        # Colorbar
+        ax_cbar = fig.colorbar(scat, ax=fig.axes)
+        ax_cbar.set_label(label("NL_{}".format(column.upper())))
 
-    fig.tight_layout()
+        figures[node.strip()] = fig
 
-    # Colorbar
-    ax_cbar = fig.colorbar(scat, ax=fig.axes)
-    ax_cbar.set_label(label("NL_{}".format(element)))
-
-    return fig
+    return figures
 
 
 def retrieve_table(database, query, values=None):
@@ -383,6 +377,32 @@ def transition_covariance(database, element, ion, node=None, column="abundance",
 
 
 
+
+
+
+
+def abundance_differences(database, element, ion):
+    """
+    Show the line abundance differences on a per node basis.
+    """
+
+    # Corner scatter plot, coloured by REW?
+
+
+
+    data = retrieve_table(database,
+        """SELECT * FROM line_abundances WHERE element = %s AND ion = %s""",
+        (element, ion))
+
+    raise a
+
+
+    # x-axis = average REW
+    # y-axis = node1 - node2
+
+
+
+
 if __name__ == "__main__":
 
 
@@ -390,15 +410,15 @@ if __name__ == "__main__":
     from data import load_node
 
     d = load_node("data/GES_iDR4_WG11_MyGIsFOS.fits")
-    f = node_element_abundance_against_stellar_parameters(d, "SI1")
+    f = mean_abundances_against_stellar_parameters(d, "SI1")
     """
 
     import psycopg2 as pg
     db = pg.connect(dbname="arc")
 
     #tellurics(db)#, "Si", 1)
-    transition_covariance(db, "Si", 1)
-
+    #transition_covariance(db, "Si", 1)
+    mean_abundance_against_stellar_parameters(db, "Si", 1)
     raise a
     #
 
