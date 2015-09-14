@@ -3,6 +3,7 @@
 """ Plots."""
 
 import logging
+from collections import Counter
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from colormaps import (magma, inferno, plasma, viridis)
@@ -103,13 +104,26 @@ def retrieve(database, query, values=None):
     return result
 
 
-def retrieve_table(database, query, values=None):
+def retrieve_table(database, query, values=None, prefix=True):
 
     cursor = database.cursor()
     cursor.execute(query, values)
     names = [_[0] for _ in cursor.description]
     results = cursor.fetchall()
     if len(results) > 0:
+        # Do we have multiple columns? If so, prefix them.
+        duplicate_names = [k for k, v in Counter(names).items() if v > 1]
+        if len(duplicate_names) > 0 and prefix:
+            prefixes = []
+            counted = []
+            for name in names:
+                if name in duplicate_names:
+                    prefixes.append(counted.count(name))
+                    counted.append(name)
+                else:
+                    prefixes.append("")
+            names = ["{0}.{1}".format(p, n) for p, n in zip(prefixes, names)]
+
         t = Table(rows=results, names=names)
         cursor.close()
         return t
@@ -494,7 +508,7 @@ def corner_scatter(data, labels=None, uncertainties=None, extent=None,
     return fig
 
 
-def mean_abundance_differences(database, element, ion, bins=None):
+def mean_abundance_differences(database, element, ion, bins=None, **kwargs):
     """
     Show the mean abundance differences from each node.
     """
@@ -520,13 +534,170 @@ def mean_abundance_differences(database, element, ion, bins=None):
 
     bins = bins or np.arange(-0.50, 0.55, 0.05)
     return corner_scatter(Z, uncertainties=Z_uncertainties,
-        labels=map(str.strip, nodes), bins=bins)
+        labels=map(str.strip, nodes), bins=bins, **kwargs)
 
 
     # x-axis = average REW
     # y-axis = node1 - node2
 
 
+def all_node_individual_line_abundance_differences(database, element, ion,
+    **kwargs):
+
+    nodes = retrieve_table(database, """SELECT DISTINCT(node) 
+        FROM line_abundances""")["node"]
+    return { n.strip(): individual_line_abundance_differences(database, element,
+        ion, n, **kwargs) for n in nodes }
+
+
+def individual_line_abundance_differences(database, element, ion, node,
+    ew_node="EPINARBO  ", rew_on_x_axis=False, x_extent=None, y_extent=None,
+    **kwargs):
+    """
+    Show how one node compares to all other nodes for individual abundances
+    from some line.
+    """
+
+    # Get all the lines measured by this particular node for this element & spec
+    unique_wavelengths = retrieve_table(database, """SELECT DISTINCT(wavelength)
+        FROM line_abundances WHERE node = %s and element = %s and ion = %s
+        ORDER BY wavelength ASC""", (node, element, ion))
+    if len(unique_wavelengths) == 0: return
+    unique_wavelengths = unique_wavelengths["wavelength"]
+
+    # Get all other node names
+    comparison_nodes = retrieve_table(database, """SELECT DISTINCT(node)
+        FROM line_abundances""")["node"]
+    comparison_nodes = set(comparison_nodes).difference([node])
+
+    # How many plots will we need?
+    N_nodes = len(comparison_nodes)
+    N_lines = len(unique_wavelengths)
+
+    comparison_data = retrieve_table(database, """SELECT * FROM line_abundances
+        WHERE node != %s AND element = %s AND ion = %s ORDER BY wavelength ASC""",
+        (node, element, ion))
+
+    # Which node measures EW? Use that for REW
+    ew_data = retrieve_table(database, """SELECT wavelength, ew, cname
+        FROM line_abundances WHERE node = %s AND element = %s AND ion = %s
+        ORDER BY wavelength ASC""", (ew_node, element, ion))
+    rew = np.log(ew_data["ew"]/ew_data["wavelength"])
+
+    node_data = retrieve_table(database, """SELECT * FROM line_abundances
+        WHERE node = %s AND element = %s AND ion = %s ORDER BY wavelength ASC""",
+        (node, element, ion))
+
+    scatter_kwargs = {
+        "cmap": plasma,
+        "vmin": np.nanmin(rew),
+        "vmax": np.nanmax(rew),
+        "s": 50
+    }
+    if rew_on_x_axis:
+        scatter_kwargs.update({
+            "vmin": np.nanmin(node_data["abundance"]),
+            "vmax": np.nanmax(node_data["abundance"])
+        })
+
+    scatter_kwargs.update(kwargs)
+
+    fig, axes = plt.subplots(N_nodes, N_lines, figsize=(3 + 5*N_lines, 0.5 + 2*N_nodes))
+
+    for i, wavelength in enumerate(unique_wavelengths):
+        for j, comparison_node in enumerate(comparison_nodes):
+            print(i, j)
+            ax = axes[j, i]
+
+            idx = (comparison_data["node"] == comparison_node) \
+                * (comparison_data["wavelength"] == wavelength)
+            
+            # Match by CNAME.
+            node_abundance = node_data["abundance"]
+            comparison_abundance = np.nan * np.ones(len(node_abundance))
+            for k, cname in enumerate(node_data["cname"]):
+                subset = comparison_data["cname"][idx]
+                c_idx = np.where(subset == cname)[0]
+                if len(c_idx) > 0:
+                    comparison_abundance[k] \
+                        = comparison_data["abundance"][idx][c_idx[0]]
+
+            rew = np.nan * np.ones(node_abundance.size)
+            mask = (ew_data["wavelength"] == wavelength)
+            for k, cname in enumerate(node_data["cname"]):
+                c_idx = np.where(mask * (ew_data["cname"] == cname))[0]
+                if len(c_idx) > 0:
+                    c_idx = c_idx[0]
+                    rew[k] = np.log(ew_data["ew"]/ew_data["wavelength"])[c_idx]
+
+            # Set up plotting options.
+            if rew_on_x_axis:
+                x = rew
+                scatter_kwargs["c"] = node_abundance
+            else:
+                x = node_abundance
+                scatter_kwargs["c"] = rew
+
+            scat = ax.scatter(
+                x, node_abundance - comparison_abundance,
+                **scatter_kwargs)
+            non_finites = ~np.isfinite(scatter_kwargs["c"])
+            kwds = scatter_kwargs.copy()
+            kwds.update({
+                "facecolor": "#CCCCCC",
+                "zorder": -1
+            })
+            del kwds["c"]
+            ax.scatter(x[non_finites],
+                (node_abundance - comparison_abundance)[non_finites], **kwds)
+
+
+            ax.axhline(0, c="#666666", ls="-", zorder=-1)
+
+            if ax.is_first_col():
+                ax.set_ylabel(r"$\Delta${0}".format(comparison_node.strip()))
+            else:
+                ax.set_yticklabels([])
+
+            if ax.is_last_row():
+                if rew_on_x_axis:
+                    ax.set_xlabel(r"$\log\left(\frac{W}{\lambda}\right)$")
+                else:
+                    ax.set_xlabel("{0} {1} ({2})".format(element, ion, node.strip()))
+            else:
+                ax.set_xticklabels([])
+
+            if ax.is_first_row():
+                ax.set_title(wavelength)
+
+    for ax in axes.flatten():
+        ax.xaxis.set_major_locator(MaxNLocator(6))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+
+    # Common x- and y-limits.
+    if y_extent is None:
+        ylim = np.max([np.abs(ax.get_ylim()).max() for ax in axes.flatten()])
+        y_extent = (-ylim, +ylim)
+
+    if x_extent is None:
+        xlim_min = np.min([ax.get_xlim()[0] for ax in axes.flatten()])
+        xlim_max = np.max([ax.get_xlim()[1] for ax in axes.flatten()])
+        x_extent = (xlim_min, xlim_max)
+
+    for ax in axes.flatten():
+        ax.set_xlim(x_extent)
+        ax.set_ylim(y_extent)
+
+    fig.tight_layout()
+
+    
+    cbar = plt.colorbar(scat, ax=list(axes.flatten()))
+    if rew_on_x_axis:
+        cbar.set_label("{0} {1} ({2})".format(element, ion, node.strip()))
+    else:
+        cbar.set_label(r"$\log\left(\frac{W}{\lambda}\right)$")
+
+    return fig
 
 
 if __name__ == "__main__":
@@ -545,7 +716,9 @@ if __name__ == "__main__":
     #tellurics(db)#, "Si", 1)
     #transition_covariance(db, "Si", 1)
     #mean_abundance_against_stellar_parameters(db, "Si", 1)
-    mean_abundance_differences(db, "Si", 1)
+    #ean_abundance_differences(db, "Si", 2, extent=(6, 9))
+    #individual_line_abundance_differences(db, "Si", 1, "EPINARBO  ")
+    t = all_node_individual_line_abundance_differences(db, "Si", 2)
     raise a
     #
 
