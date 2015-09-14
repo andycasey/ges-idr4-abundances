@@ -84,6 +84,7 @@ Qualitative comparisons against existing studies
 Line-to-line scatter
 --------------------
 
+- [X] Element abundance/equivalent width covariance (`plot.transition_covariance`)
 - [ ] Residuals of one line abundance compared to mean abundance (y-axis) against radial velocity (x-axis) to look for lines impacted by tellurics
 - [ ] Histogram showing the percentile of one line abundance with respect to the distribution of abundances for a given star. This should show "where" a line always sits in a distribution of abundances for a given line (is it always high, always low, or spread everywhere?)
 - [ ] Node-to-node scatter for one line compared to the node-to-node scatter for an element (show as histograms) 
@@ -91,7 +92,7 @@ Line-to-line scatter
 
 Node-to-node scatter
 --------------------
-- [ ] Corner plots showing abundances from all nodes, compared to each other.
+- [X] Corner plots showing mean abundance from all nodes, compared to each other. (`plot.mean_abundance_differences`)
 - [ ] Distributions showing node-to-node scatter from node A to all other nodes.
 - [ ] Distributions showing node-to-node scatter from node A to all other nodes, as grouped by the radiative transfer code used.
 
