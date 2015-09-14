@@ -95,6 +95,14 @@ def mean_abundance_against_stellar_parameters(database, element, ion, node=None,
     return figures
 
 
+def retrieve(database, query, values=None):
+    cursor = database.cursor()
+    cursor.execute(query, values)
+    result = cursor.fetchall()
+    cursor.close()
+    return result
+
+
 def retrieve_table(database, query, values=None):
 
     cursor = database.cursor()
@@ -379,21 +387,137 @@ def transition_covariance(database, element, ion, node=None, column="abundance",
 
 
 
-
-
-def abundance_differences(database, element, ion):
+def corner_scatter(data, labels=None, uncertainties=None, extent=None, c=None):
     """
-    Show the line abundance differences on a per node basis.
+    Create a corner scatter plot showing the differences between each node.
+
+    :param extent: [optional]
+        The (minimum, maximum) extent of the plots.
+
+    :type extent:
+        two-length tuple
+
+    :returns:
+        A matplotlib figure.
     """
 
-    # Corner scatter plot, coloured by REW?
+    # How many nodes to plot?
+    N = data.shape[0]
+    K = N - 1
+    assert K > 0, "Need more than one node to compare against."
+
+    factor = 2.0           # size of one side of one panel
+    lbdim = 0.5 * factor   # size of left/bottom margin
+    trdim = 0.5 * factor   # size of top/right margin
+    whspace = 0.15         # w/hspace size
+    plotdim = factor * K + factor * (K - 1.) * whspace
+    dim = lbdim + plotdim + trdim
+
+    fig, axes = plt.subplots(K, K, figsize=(dim, dim))
+    
+    lb = lbdim / dim
+    tr = (lbdim + plotdim) / dim
+    fig.subplots_adjust(left=lb, bottom=lb, right=tr, top=tr,
+        wspace=whspace, hspace=whspace)
+
+    # Match all of the nodes
+
+    for i in range(N):
+        for j in range(N):
+            if j == K: break
+            elif j > i:
+                try:
+                    ax = axes[i, j]
+                except IndexError:
+                    continue
+                ax.set_visible(False)
+                ax.set_frame_on(False)
+                continue
+            if 0 > i-1: continue
+            if K > 1:
+                ax = axes[i-1, j]
+            else:
+                ax = axes
+
+            if extent is not None:
+                ax.plot(extent, extent, "k:", zorder=-100)
+
+            if uncertainties is not None:
+                ax.errorbar(data[i], data[j], 
+                    xerr=uncertainties[i], yerr=uncertainties[j], ecolor="k", 
+                    aa=True, fmt=None, mec='k', mfc="w", ms=6, zorder=1, lc="k")
+
+            ax.scatter(data[i], data[j], facecolor="w", zorder=100)
+            
+            if extent is not None:
+                ax.set_xlim(extent)
+                ax.set_ylim(extent)
+            ax.xaxis.set_major_locator(MaxNLocator(5))
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+
+            if i != K:
+                ax.set_xticklabels([])
+            else:
+                [l.set_rotation(45) for l in ax.get_xticklabels()]
+                if labels is not None:
+                    ax.set_xlabel(labels[j])
+                    ax.xaxis.set_label_coords(0.5, -0.3)
+                
+            if j > 0:
+                ax.set_yticklabels([])
+            else:
+                [l.set_rotation(45) for l in ax.get_yticklabels()]
+                if labels is not None:
+                    ax.set_ylabel(labels[i])
+                    ax.yaxis.set_label_coords(-0.3, 0.5)
+
+    # If no extent given, grab the biggest range from anything.
+    if extent is None:
+        lim = (0.9 * np.nanmin(data), 1.1 * np.nanmax(data))
+        
+        # Plot extents
+        [ax.plot(lim, lim, "k:", zorder=-100) for ax in axes.flatten()]
+
+        # Set limits
+        [ax.set_xlim(min(lim), max(lim)) for ax in axes.flatten()]
+        [ax.set_ylim(min(lim), max(lim)) for ax in axes.flatten()]
+
+    fig.tight_layout()
+    
+    return fig
 
 
+def mean_abundance_differences(database, element, ion):
+    """
+    Show the mean abundance differences from each node.
+    """
 
-    data = retrieve_table(database,
-        """SELECT * FROM line_abundances WHERE element = %s AND ion = %s""",
-        (element, ion))
+    nodes = retrieve_table(database, 
+        "SELECT distinct(node) from node_results")["node"]
+    N_entries = int(retrieve(database, """SELECT count(*) FROM node_results
+        WHERE node = %s""", (nodes[0], ))[0][0])
+    N_nodes = len(nodes)
 
+    Z = np.nan * np.ones((N_nodes, N_entries))
+    Z_uncertainties = Z.copy()
+    #data_upper = data.copy()
+    column = "{0}{1}".format(element.lower(), ion)
+    for i, node in enumerate(nodes):
+
+        data = retrieve_table(database,
+            """SELECT {0}, e_{0} FROM node_results WHERE node = %s
+            ORDER BY ra DESC, dec DESC, cname DESC""".format(column), (node, ))
+        Z[i, :] = data[column]
+        Z_uncertainties[i, :] = data["e_{}".format(column)]
+        #data_upper[i, :] = data["upper_{}".format(column)]
+
+    fig = corner_scatter(Z, uncertainties=Z_uncertainties,
+        labels=map(str.strip, nodes))
+    return fig
+    # Get colours for REW.
+
+
+    
     raise a
 
 
@@ -418,7 +542,8 @@ if __name__ == "__main__":
 
     #tellurics(db)#, "Si", 1)
     #transition_covariance(db, "Si", 1)
-    mean_abundance_against_stellar_parameters(db, "Si", 1)
+    #mean_abundance_against_stellar_parameters(db, "Si", 1)
+    mean_abundance_differences(db, "Si", 1)
     raise a
     #
 
