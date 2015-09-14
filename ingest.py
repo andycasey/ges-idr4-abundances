@@ -33,6 +33,14 @@ def parse_line_abundances(filename):
         else:
             return s
 
+    def safe_int(s):
+        try:
+            s = int(s)
+        except (TypeError, ValueError):
+            return 0
+        else:
+            return s
+
     rows = []
     metadata = {
         "filename": os.path.basename(filename),
@@ -45,7 +53,8 @@ def parse_line_abundances(filename):
                     metadata["cname"] = line.split("CNAME")[1].strip()
 
                 elif "CODE" in line:
-                    metadata["code"] = line.split("CODE")[1].strip()
+                    _ = ["CODE", "CODES"]["CODES" in line]    
+                    metadata["code"] = line.split(_)[1].strip()
                     
                 elif "OBJECT" in line:
                     metadata["object"] = line.split("OBJECT")[1].strip()
@@ -97,6 +106,23 @@ def parse_line_abundances(filename):
                         "abundance": safe_float(abundance),
                         "e_abundance": safe_float(e_abundance),
                         "upper_abundance": int(upper_abundance),
+                        "measurement_type": measurement_type.strip()
+                    })
+
+                elif metadata["node"] == "Lumba":
+                    _, element, ion, ew, e_ew, upper_ew, abundance, e_abundance,\
+                        upper_abundance, measurement_type = line.split()
+
+                    row.update({
+                        "wavelength": wavelength,
+                        "element": element,
+                        "ion": int(ion),
+                        "ew": safe_float(ew),
+                        "e_ew": safe_float(ew),
+                        "upper_ew": safe_int(upper_ew),
+                        "abundance": safe_float(abundance),
+                        "e_abundance": safe_float(e_abundance),
+                        "upper_abundance": safe_int(upper_abundance),
                         "measurement_type": measurement_type.strip()
                     })
 
@@ -591,20 +617,37 @@ if __name__ == "__main__":
 
 
     import psycopg2 as pg
+    from astropy.io import fits
     from glob import glob
 
     connection = pg.connect(dbname="arc")
     create_tables(connection)
 
     from glob import glob
-    files = glob("data/MyGIsFOS/*.dat") + glob("data/EPINARBO/*.dat")
+    files = glob("data/*/*.dat")
+    
+    lumba = fits.open("data/GES_iDR4_WG11_Lumba.fits")[2].data
 
-    what = []
     cursor = connection.cursor()
     for filename in files:
         print(filename)
         line_abundances = parse_line_abundances(filename)
         if len(line_abundances) == 0: continue
+
+        # Fix CNAME because Lumba individual files have FILENAME instead of
+        # CNAME.
+        if "Lumba" in filename:
+            possibilities = lumba["FILENAME"][lumba["OBJECT"] == line_abundances[0]["object"]]
+            match_filename_string = "_".join(filename.split("_")[2:5]).split(".wg11")[0]
+            full_filename = [_ for _ in possibilities if match_filename_string in _]
+            assert len(full_filename) >= 1
+            cname = lumba["CNAME"][lumba["FILENAME"] == full_filename[0]][0]
+
+            fixed_line_abundances = []
+            for row in line_abundances:
+                row["cname"] = cname
+                fixed_line_abundances.append(row)
+            line_abundances = [] + fixed_line_abundances
 
         k = line_abundances[0].keys()
         cursor.executemany("""INSERT INTO line_abundances({0}) VALUES ({1})"""\
@@ -649,7 +692,5 @@ if __name__ == "__main__":
     connection.commit()
     connection.close()
 
-    print("WHAT IS ")
-    print(what)
 
     raise a
