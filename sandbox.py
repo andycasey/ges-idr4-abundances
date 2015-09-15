@@ -46,6 +46,8 @@ if __name__ == "__main__":
 
     figures = {
         "percentile": plot.percentiles,
+        "x-fe-abundances": (plot.line_abundances, { "reference_column": "feh",
+            "aux_column": "teff", "aux_extent": (3500, 7500) }),
     }
     """
         "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),

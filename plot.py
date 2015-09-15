@@ -698,6 +698,119 @@ def individual_line_abundance_differences(database, element, ion, node,
 
     return fig
 
+def differential_line_abundances(database, element, ion, bins=50, 
+    absolute_extent=(6, 9), differential_extent=None, **kwargs):
+    """
+    Show histograms of the absolute and differential line abundances for a given
+    element and ion.
+    
+    :param database:
+        A database connection.
+
+    :param element:
+        The atomic element of interest.
+
+    :type element:
+        str
+
+    :param ion:
+        The ionisation stage of the species of interest (1 indicates neutral)
+
+    :type ion:
+        int
+    """
+
+    # Get all of the unique lines.
+    data = retrieve_table(database, 
+        """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
+        WHERE element = %s AND ion = %s ORDER BY wavelength ASC""",
+        (element, ion))
+    if data is None: return
+
+    __round_wavelengths = kwargs.pop("__round_wavelengths", 1)
+    data["wavelength"] = np.round(data["wavelength"], __round_wavelengths)
+    unique_wavelengths = np.unique(data["wavelength"])
+
+    K, N_lines = 3, len(unique_wavelengths)
+
+    # Histograms be square as shit.
+    scale = 2.0
+    wspace, hspace = 0.1, 0.1
+    lb, tr = 0.5, 0.2
+    ys = scale * N_lines + scale * (N_lines - 1) * wspace
+    xs = scale * K + scale * (K - 1) * hspace
+    
+    xdim = lb * scale + xs + tr * scale
+    ydim = lb * scale + ys + tr * scale
+
+    fig, axes = plt.subplots(N_lines, K, figsize=(xdim, ydim))
+    fig.subplots_adjust(
+        left=(lb * scale)/xdim,
+        bottom=(lb * scale)/ydim,
+        right=(lb * scale + xs)/xdim,
+        top=(tr * scale + ys)/ydim,
+        wspace=wspace, hspace=hspace)
+
+    # Plot the full distribution of abundances, and the contributions from
+    # individual lines.
+    data = retrieve_table(database,
+        "SELECT * FROM line_abundances WHERE element = %s AND ion = %s",
+        (element, ion))
+    data["wavelength"] = np.round(data["wavelength"], __round_wavelengths)
+    
+    # Use only finite measurements.
+    use = np.isfinite(data["abundance"]) * (data["upper_abundance"] == 0)
+    data = data[use]
+
+    if absolute_extent is None:
+        bin_min, bin_max = data["abundance"].min(), data["abundance"].max()
+    else:
+        bin_min, bin_max = absolute_extent
+
+    hist_kwds = {
+        "histtype": "step",
+        "bins": np.linspace(absolute_extent[0], absolute_extent[1], bins + 1),
+        "normed": True,
+    }
+
+    for i, (ax, wavelength) in enumerate(zip(axes.T[0], unique_wavelengths)):
+    
+        # Show the full distribution.
+        ax.hist(data["abundance"], color="k", **hist_kwds)
+
+        # Show the distribution for this wavelength.
+        ax.hist(data["abundance"][data["wavelength"] == wavelength], color="b",
+            **hist_kwds)
+
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+        if not ax.is_last_row():
+            ax.set_xticklabels([])
+
+        else:
+            ax.set_xlabel("{0} {1}".format(element, ion))
+
+    # Plot the full distribution of differential abundances.
+    # (but first,..) determine the full matrix of differential abundances.
+    nodes = retrieve_table(database, """SELECT DISTINCT ON (node) node
+        FROM line_abundances ORDER BY node ASC""")["node"]
+    N_nodes = len(nodes)
+    differential_abundances = np.nan * np.ones((N_nodes, N_lines))
+
+    # Group the data by wavelength, element, ion (nodes will be different)
+    raise a
+
+
+
+    #for i, (ax, wavelength) in enumerate(zip(axes.T[1], unique_wavelengths)):
+
+
+
+
+    fig.savefig("figures/tmp.png")
+
+    raise a
+
+    # For each individual line, do the match ups and comparisons
 
 def line_abundances(database, element, ion, reference_column, aux_column=None,
     show_node_comparison=True, show_line_comparison=True, uncertainties=False,
@@ -1036,9 +1149,10 @@ if __name__ == "__main__":
 
     #tellurics(db)#, "Si", 1)
     #percentiles(db, "Si", 1)
-    fig = line_abundances(db, "Si", 1, "feh", aux_column="teff",
-        aux_extent=(3500, 7500))
-    fig.savefig("figures/tmp.png")
+    #fig = line_abundances(db, "Si", 1, "feh", aux_column="teff",
+    #    aux_extent=(3500, 7500))
+    #fig.savefig("figures/tmp.png")
+    fig = differential_line_abundances(db, "Si", 1)
     raise a
     #transition_covariance(db, "Si", 1)
     #mean_abundance_against_stellar_parameters(db, "Si", 1)
