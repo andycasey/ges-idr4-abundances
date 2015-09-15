@@ -625,7 +625,7 @@ if __name__ == "__main__":
 
     from glob import glob
     files = glob("data/*/*.dat")
-    
+
     lumba = fits.open("data/GES_iDR4_WG11_Lumba.fits")[2].data
 
     cursor = connection.cursor()
@@ -686,6 +686,9 @@ if __name__ == "__main__":
                 r)
 
         print("Done")
+
+    cursor.execute("CREATE INDEX transition_index ON line_abundances (wavelength, element, ion);")
+
     cursor.close()
 
 

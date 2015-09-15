@@ -30,8 +30,9 @@ def make_figures(figures, database, element, ion, format="png"):
                 for suffix, figure in fig.items():
                     filename = os.path.join(directory, "{0}-{1}.{2}".format(
                         figure_name, suffix, format))
-                    figure.savefig(filename)
-                    print("Created {}".format(filename))
+                    if figure is not None:
+                        figure.savefig(filename)
+                        print("Created {}".format(filename))
 
             else:
                 filename = os.path.join(directory, "{0}.{1}".format(
@@ -44,12 +45,12 @@ if __name__ == "__main__":
 
 
     figures = {
-    #    "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
-    #    "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
-    #    "abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
-    #    "ew-covariance": (plot.transition_covariance, {"column": "ew"}),
-    #    "mean-abundance-sp": plot.mean_abundance_against_stellar_parameters,
-    #    "mean-abundance-differences": plot.mean_abundance_differences,
+        "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
+        "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
+        "abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
+        "ew-covariance": (plot.transition_covariance, {"column": "ew"}),
+        "mean-abundance-sp": plot.mean_abundance_against_stellar_parameters,
+        "mean-abundance-differences": plot.mean_abundance_differences,
         "line-abundances-rew": (plot.all_node_individual_line_abundance_differences,
             {"rew_on_x_axis": True}),
         "line-abundances": (plot.all_node_individual_line_abundance_differences,
@@ -61,4 +62,5 @@ if __name__ == "__main__":
     }
 
     database = pg.connect(dbname="arc")
-    make_figures(figures, database, "Si", 1)
+    for i in range(3, 5):
+        make_figures(figures, database, "Si", i)
