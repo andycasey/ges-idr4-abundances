@@ -42,8 +42,12 @@ def parse_line_abundances(filename):
             return s
 
     rows = []
+    basename = os.path.basename(filename)
+    #EPINARBO_uv_11504236+0145494_580.0_16.wg11_abun_idr4.final.dat
+    stub = "_".join(basename.split(".wg11")[0].split("_")[1:])
     metadata = {
-        "filename": os.path.basename(filename),
+        "abundance_filename": basename,
+        "spectrum_filename_stub": stub,
         "node": os.path.basename(filename).split("_")[0]
     }
     with open(filename, "r") as fp:
@@ -157,7 +161,8 @@ def create_tables(connection):
         cname char(16) not null,
         code char(30) not null,
         object char(21) not null,
-        filename char(140) not null
+        filename char(140) not null,
+        spectrum_filename_stub char(140) not null
         );""")
 
     cursor.execute("""CREATE TABLE node_results(
@@ -626,28 +631,11 @@ if __name__ == "__main__":
     from glob import glob
     files = glob("data/*/*.dat")
 
-    lumba = fits.open("data/GES_iDR4_WG11_Lumba.fits")[2].data
-
     cursor = connection.cursor()
     for filename in files:
         print(filename)
         line_abundances = parse_line_abundances(filename)
         if len(line_abundances) == 0: continue
-
-        # Fix CNAME because Lumba individual files have FILENAME instead of
-        # CNAME.
-        if "Lumba" in filename:
-            possibilities = lumba["FILENAME"][lumba["OBJECT"] == line_abundances[0]["object"]]
-            match_filename_string = "_".join(filename.split("_")[2:5]).split(".wg11")[0]
-            full_filename = [_ for _ in possibilities if match_filename_string in _]
-            assert len(full_filename) >= 1
-            cname = lumba["CNAME"][lumba["FILENAME"] == full_filename[0]][0]
-
-            fixed_line_abundances = []
-            for row in line_abundances:
-                row["cname"] = cname
-                fixed_line_abundances.append(row)
-            line_abundances = [] + fixed_line_abundances
 
         k = line_abundances[0].keys()
         cursor.executemany("""INSERT INTO line_abundances({0}) VALUES ({1})"""\
@@ -687,13 +675,10 @@ if __name__ == "__main__":
 
         print("Done")
 
-    cursor.execute("CREATE INDEX transition_index ON line_abundances (wavelength, element, ion);")
-
     cursor.close()
 
 
     connection.commit()
     connection.close()
 
-
-    raise a
+    print("Ingestion complete.")
