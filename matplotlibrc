@@ -1,4 +1,5 @@
-backend: TkAgg
+#backend: TkAgg
+backend: Agg
 
 lines.linewidth : 1.5
 
