@@ -698,7 +698,62 @@ def individual_line_abundance_differences(database, element, ion, node,
     return fig
 
 
-def percentiles(database, element, ion, bins=None):
+def line_abundances(database, element, ion, reference_column,
+    reference_node=None, **kwargs):
+    """
+    Show the reference and relative abundances for a given element and ion
+    against the reference column provided.
+    
+    :param database:
+        A database connection.
+
+    :param element:
+        The atomic element of interest.
+
+    :type element:
+        str
+
+    :param ion:
+        The ionisation stage of the species of interest (1 indicates neutral)
+
+    :type ion:
+        int
+
+    :param reference_column:
+        The name of the reference column (from node_results) to display on the
+        x-axis.
+
+    :type reference_column:
+        str
+
+    :param reference_node: [optional]
+        The name of the node to use as a reference. Line abundances of other
+        nodes will be shown relative to this node.
+
+    :type reference_node:
+        str
+    """
+
+    # Ensure the reference column is valid.
+    reference_column = reference_column.lower()
+    check = retrieve_table(database, "SELECT * FROM line_abundances LIMIT 1")
+    if reference_column not in check.dtype.names:
+        raise ValueError("reference column '{0}' not valid (acceptable: {1})"\
+            .format(reference_column, ", ".join(check.dtype.names)))
+
+    # Ensure the reference node is valid.
+    nodes = retrieve_table(database,
+        "SELECT DISTINCT(node) FROM line_abundances")["node"]
+    if reference_node is None: reference_node = nodes[0]
+    if reference_node not in nodes:
+        raise ValueError("reference node not recognised (acceptable: {}".format(
+            ", ".join(nodes)))
+
+    # Get all of the lines for this element/ion combination.
+
+    raise a
+
+def percentiles(database, element, ion, bins=20, **kwargs):
     """
     Show histograms of the percentile position for each line.
 
@@ -720,45 +775,76 @@ def percentiles(database, element, ion, bins=None):
 
     # Get all the unique wavelengths for this species.
     wavelengths = retrieve_table(database, """SELECT DISTINCT(wavelength)
-        FROM line_abundances ORDER BY wavelength ASC""")["wavelength"]
-    nodes = retrieve_table(database, 
-        "SELECT DISTINCT(node) FROM line_abundances")["node"]
+        FROM line_abundances WHERE element = %s AND ion = %s
+        ORDER BY wavelength ASC""", (element, ion))["wavelength"]
+    nodes = retrieve_table(database, """
+        SELECT DISTINCT(node) FROM line_abundances
+        WHERE element = %s AND ion = %s""", (element, ion))["node"]
+
+    # Because otherwise it's a mess.
+    wavelengths = np.unique(np.round(wavelengths,
+        kwargs.pop("__round_wavelengths", 1)))
 
     # Get all the data and group abundances for each FILENAME (CNAME/NODE)
     data = retrieve_table(database, 
         "SELECT * FROM line_abundances WHERE element = %s AND ion = %s",
         (element, ion))
     data = data.group_by(["filename"]) # Or cname/node would do
-    percentiles = { w: { n: for n in nodes } for w in wavelengths }
-    for group in data.groups:
+    percentiles = { w: { n: [] for n in nodes } for w in wavelengths }
+    for i, group in enumerate(data.groups):
+        print(i, len(data.groups))
 
         # This is already grouped by CNAME/node
         node = group["node"][0]
         finite = np.isfinite(group["abundance"])
         for line, is_finite in zip(group, finite):
             if not is_finite: continue
-            percentiles[line["wavelength"]][node].append(
+            percentiles[np.round(line["wavelength"], 1)][node].append(
                 score(group["abundance"][finite], line["abundance"]))
 
     # Each line should be in its own axes, and each axes will have multiple hist
     N_lines, N_nodes = len(wavelengths), len(nodes)
-    fig, axes = plt.subplots(N_lines)
+    cols = kwargs.pop("columns", 4)
+    rows = N_lines/cols + [0, 1][N_lines % cols > 0]
+    fig, axes = plt.subplots(rows, cols, figsize=(3*cols, 3*rows))
+    axes = axes.flatten()
+
+    cmap = kwargs.pop("cmap", plt.cm.Paired)
+    cmap_indices = np.linspace(0, 1, N_nodes)
 
     if isinstance(bins, int): bins = np.linspace(0, 100, bins + 1)
-    kwds = { "bins": bins, "histtype": "step" }
-
+    kwds = { "bins": bins, "histtype": "step", "lw": 2 }
+    kwds.update(kwargs)
+    
     for i, (ax, wavelength) in enumerate(zip(axes, wavelengths)):
+        print(i, wavelength)
 
-        # TODO: colors for each node.
-        # TODO: legend in final figure.
-        for node in nodes:
-            ax.hist(percentiles[wavelength][node], **kwds)
-
+        for ci, node in zip(cmap_indices, nodes):
+            if len(percentiles[wavelength][node]):
+                ax.hist(percentiles[wavelength][node], 
+                    color=cmap(ci), **kwds)
+                ax.plot([], [], color=cmap(ci), lw=kwds.get("lw", 1),
+                    label=node.strip())
+    
         ax.set_title(wavelength)
 
+        ax.set_yticks([])
+        if not ax.is_last_row():
+            ax.set_xticklabels([])
+        else:
+            ax.set_xlabel("Percentile")
 
-    raise a
+        if ax.is_first_col():
+            ax.set_ylabel("$N$")
 
+    # Put the legend in the bluest axes.
+    _ = [ax for ax in axes if len(ax.patches) == N_nodes][0]
+    axes[0].legend(*_.get_legend_handles_labels(), loc="upper left",
+        frameon=False, fontsize=14)
+
+    fig.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.95,
+        wspace=0.15, hspace=0.20)
+    
     return fig
 
 
@@ -776,7 +862,8 @@ if __name__ == "__main__":
     import psycopg2 as pg
     db = pg.connect(dbname="arc")
 
-    tellurics(db)#, "Si", 1)
+    #tellurics(db)#, "Si", 1)
+    percentiles(db, "Si", 1)
     raise a
     #transition_covariance(db, "Si", 1)
     #mean_abundance_against_stellar_parameters(db, "Si", 1)
