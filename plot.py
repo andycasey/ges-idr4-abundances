@@ -12,6 +12,7 @@ from scipy.stats import percentileofscore as score
 import numpy as np
 from astropy.table import Table
 
+import utils
 
 
 def label(text_label):
@@ -47,7 +48,7 @@ def mean_abundance_against_stellar_parameters(database, element, ion, node=None,
     if node is None:
         # Get all the node names.
         nodes = list(retrieve_table(database,
-            "SELECT DISTINCT(node) from node_results")["node"])
+            "SELECT DISTINCT(node) from node_results ORDER BY node ASC")["node"])
     else:
         nodes = [node]
 
@@ -123,8 +124,8 @@ def retrieve_table(database, query, values=None, prefix=True):
                     prefixes.append(counted.count(name))
                     counted.append(name)
                 else:
-                    prefixes.append("")
-            names = ["{0}.{1}".format(p, n) for p, n in zip(prefixes, names)]
+                    prefixes.append(-1)
+            names = [[n, "{0}.{1}".format(p, n)][p>=0] for p, n in zip(prefixes, names)]
 
         t = Table(rows=results, names=names)
         cursor.close()
@@ -508,7 +509,7 @@ def mean_abundance_differences(database, element, ion, bins=None, **kwargs):
     """
 
     nodes = retrieve_table(database, 
-        "SELECT distinct(node) from node_results")["node"]
+        "SELECT distinct(node) from node_results ORDER BY node ASC")["node"]
     N_entries = int(retrieve(database, """SELECT count(*) FROM node_results
         WHERE node = %s""", (nodes[0], ))[0][0])
     N_nodes = len(nodes)
@@ -543,7 +544,7 @@ def all_node_individual_line_abundance_differences(database, element, ion,
     **kwargs):
 
     nodes = retrieve_table(database, """SELECT DISTINCT(node) 
-        FROM line_abundances""")["node"]
+        FROM line_abundances ORDER BY node ASC""")["node"]
     return { n.strip(): individual_line_abundance_differences(database, element,
         ion, n, **kwargs) for n in nodes }
 
@@ -565,7 +566,7 @@ def individual_line_abundance_differences(database, element, ion, node,
 
     # Get all other node names
     comparison_nodes = retrieve_table(database, """SELECT DISTINCT(node)
-        FROM line_abundances""")["node"]
+        FROM line_abundances ORDER BY node ASC""")["node"]
     comparison_nodes = set(comparison_nodes).difference([node])
 
     # How many plots will we need?
@@ -698,8 +699,9 @@ def individual_line_abundance_differences(database, element, ion, node,
     return fig
 
 
-def line_abundances(database, element, ion, reference_column,
-    reference_node=None, **kwargs):
+def line_abundances(database, element, ion, reference_column, aux_column=None,
+    show_node_comparison=True, show_line_comparison=True, uncertainties=False,
+    abundance_format="x_fe", **kwargs):
     """
     Show the reference and relative abundances for a given element and ion
     against the reference column provided.
@@ -726,32 +728,192 @@ def line_abundances(database, element, ion, reference_column,
     :type reference_column:
         str
 
-    :param reference_node: [optional]
-        The name of the node to use as a reference. Line abundances of other
-        nodes will be shown relative to this node.
-
-    :type reference_node:
-        str
     """
 
     # Ensure the reference column is valid.
     reference_column = reference_column.lower()
-    check = retrieve_table(database, "SELECT * FROM line_abundances LIMIT 1")
+    check = retrieve_table(database, "SELECT * FROM node_results LIMIT 1")
     if reference_column not in check.dtype.names:
         raise ValueError("reference column '{0}' not valid (acceptable: {1})"\
             .format(reference_column, ", ".join(check.dtype.names)))
 
     # Ensure the reference node is valid.
     nodes = retrieve_table(database,
-        "SELECT DISTINCT(node) FROM line_abundances")["node"]
-    if reference_node is None: reference_node = nodes[0]
-    if reference_node not in nodes:
-        raise ValueError("reference node not recognised (acceptable: {}".format(
-            ", ".join(nodes)))
+        "SELECT DISTINCT(node) FROM line_abundances ORDER BY node ASC")["node"]
+    
+    # Ensure the abundance format is valid.
+    available = ("x_h", "x_fe", "log_x")
+    abundance_format = abundance_format.lower()
+    if abundance_format not in available:
+        raise ValueError("abundance format '{0}' is not valid (acceptable: {1})"\
+            .format(abundance_format, available))
 
-    # Get all of the lines for this element/ion combination.
+    reference_columns = list(set(["feh"] + [reference_column]))
+    if aux_column is not None: reference_columns.append(aux_column)
+    data = retrieve_table(database,
+        """SELECT * FROM line_abundances l JOIN
+        (SELECT DISTINCT ON (cname) cname, {0} FROM node_results ORDER BY cname)
+        n ON (l.element = %s AND l.ion = %s AND l.cname = n.cname)""".format(
+            ", ".join(reference_columns)),
+        (element, ion))
+    if data is None: return
 
-    raise a
+    data["wavelength"] = np.round(data["wavelength"],
+        kwargs.pop("__round_wavelengths", 1))
+    unique_wavelengths = np.unique(data["wavelength"])
+
+    scatter_kwds = {
+        "s": 50
+    }
+    if aux_column is not None:
+        scatter_kwds["cmap"] = plasma
+        aux_extent = kwargs.pop("aux_extent", None)
+        if aux_extent is None:
+            scatter_kwds["vmin"] = np.nanmin(data[aux_column])
+            scatter_kwds["vmax"] = np.nanmax(data[aux_column])
+        else:
+            scatter_kwds["vmin"], scatter_kwds["vmax"] = aux_extent
+
+    N_nodes, N_lines = len(nodes), len(unique_wavelengths)
+
+    # Calculate figure size
+    xscale, yscale, wspace, hspace = 4.0, 1.5, 0.05, 0.10
+    lb, tr = 0.5, 0.2
+    xs = xscale * N_lines + xscale * (N_lines - 1) * wspace
+    ys = yscale * N_nodes + yscale * (N_nodes - 1) * hspace
+    x_aux = 0 if aux_column is None else 0.5 * xscale + 4 * wspace
+
+    xdim = lb * xscale + xs + x_aux + tr * xscale
+    ydim = lb * yscale + ys + tr * yscale
+
+    fig, axes = plt.subplots(N_nodes, N_lines, figsize=(xdim, ydim))
+    fig.subplots_adjust(
+        left=(lb * xscale)/xdim,
+        bottom=(lb * yscale)/ydim,
+        right=(lb * xscale + xs + x_aux)/xdim,
+        top=(tr * yscale + ys)/ydim,
+        wspace=wspace, hspace=hspace)
+
+    for i, (node_axes, wavelength) in enumerate(zip(axes.T, unique_wavelengths)):
+
+        match_wavelength = (data["wavelength"] == wavelength)
+        for j, (ax, node) in enumerate(zip(node_axes, nodes)):
+            # Get all measurements for this line by this node.
+            match_node = (data["node"] == node)
+            match = match_node * match_wavelength
+            x = data[reference_column][match]
+            y = data["abundance"][match]
+
+            if abundance_format == "x_h":
+                y -= utils.solar_abundance(element)
+            elif abundance_format == "x_fe":
+                y -= utils.solar_abundance(element) + data["feh"][match]
+
+            if aux_column is not None:
+                scatter_kwds["c"] = data[aux_column][match]
+
+            scat = ax.scatter(x, y, **scatter_kwds)
+            if uncertainties:
+                raise NotImplementedError
+
+            # Labels and titles
+            if ax.is_last_row():
+                ax.set_xlabel(reference_column)
+
+            if ax.is_first_col():
+                ax.set_ylabel(node)
+            
+            if ax.is_first_row():
+                ax.set_title(wavelength)
+
+    comparison_scatter_kwds = {
+        "s": 25,
+        "c": "#EEEEEE",
+        "zorder": -1,
+        "marker": "v",
+        "alpha": 0.5,
+        "edgecolor": "#BBBBBB"
+    }
+
+    # Show all other measurements for this line (from all nodes).
+    if show_line_comparison: 
+        for i, (node_axes, wavelength) in enumerate(zip(axes.T, unique_wavelengths)):
+            match = (data["wavelength"] == wavelength)
+            x = data[reference_column][match]
+            y = data["abundance"][match]
+            if abundance_format == "x_h":
+                y -= utils.solar_abundance(element)
+            elif abundance_format == "x_fe":
+                y -= utils.solar_abundance(element) + data["feh"][match]
+
+            for j, ax in enumerate(node_axes):
+                ax.scatter(x, y, label="Common line", **comparison_scatter_kwds)
+
+    comparison_scatter_kwds["marker"] = "s"
+    if show_node_comparison:
+        for i, (line_axes, node) in enumerate(zip(axes, nodes)):
+            match = (data["node"] == node)
+            x = data[reference_column][match]
+            y = data["abundance"][match]
+            if abundance_format == "x_h":
+                y -= utils.solar_abundance(element)
+            elif abundance_format == "x_fe":
+                y -= utils.solar_abundance(element) + data["feh"][match]
+
+            for j, ax in enumerate(line_axes):
+                ax.scatter(x, y, label="Common node", **comparison_scatter_kwds)
+
+    if show_node_comparison and show_line_comparison:
+        axes.T[0][0].legend(loc="upper left", frameon=True, fontsize=12)
+
+    # Common x- and y-axis limits.
+    x_limits = [+np.inf, -np.inf]
+    y_limits = [+np.inf, -np.inf]
+    for ax in axes.flatten():
+        if sum([_.get_offsets().size for _ in ax.collections]) == 0:
+            continue
+
+        proposed_x_limits = ax.get_xlim()
+        proposed_y_limits = ax.get_ylim()
+
+        if proposed_x_limits[0] < x_limits[0]:
+            x_limits[0] = proposed_x_limits[0]
+        if proposed_y_limits[0] < y_limits[0]:
+            y_limits[0] = proposed_y_limits[0]
+        if proposed_x_limits[1] > x_limits[1]:
+            x_limits[1] = proposed_x_limits[1]
+        if proposed_y_limits[1] > y_limits[1]:
+            y_limits[1] = proposed_y_limits[1]
+
+    for ax in axes.flatten():
+        ax.set_xlim(x_limits)
+        ax.set_ylim(y_limits)
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+
+        if not ax.is_last_row(): ax.set_xticklabels([])
+        if not ax.is_first_col(): ax.set_yticklabels([])
+
+    if aux_column is not None:
+        cbar = plt.colorbar(scat, ax=list(axes.flatten()))
+        cbar.set_label(aux_column)
+        _ = axes.T[-1][0].get_position().bounds
+        cbar.ax.set_position([
+            (lb*xscale + xs + 4*wspace)/xdim, 
+            axes.T[-1][-1].get_position().bounds[1],
+            (lb*xscale + xs + x_aux)/xdim,
+            axes.T[-1][0].get_position().y1 - axes.T[-1][-1].get_position().y0
+            ])
+
+        fig.subplots_adjust(
+            left=(lb * xscale)/xdim,
+            bottom=(lb * yscale)/ydim,
+            right=(lb * xscale + xs)/xdim,
+            top=(tr * yscale + ys)/ydim,
+            wspace=wspace, hspace=hspace)
+    
+    return fig
+
 
 def percentiles(database, element, ion, bins=20, **kwargs):
     """
@@ -776,19 +938,23 @@ def percentiles(database, element, ion, bins=20, **kwargs):
     # Get all the unique wavelengths for this species.
     wavelengths = retrieve_table(database, """SELECT DISTINCT(wavelength)
         FROM line_abundances WHERE element = %s AND ion = %s
-        ORDER BY wavelength ASC""", (element, ion))["wavelength"]
-    nodes = retrieve_table(database, """
-        SELECT DISTINCT(node) FROM line_abundances
-        WHERE element = %s AND ion = %s""", (element, ion))["node"]
-
+        ORDER BY wavelength ASC""", (element, ion))
+    if wavelengths is None: return None
+    
     # Because otherwise it's a mess.
-    wavelengths = np.unique(np.round(wavelengths,
+    wavelengths = np.unique(np.round(wavelengths["wavelength"],
         kwargs.pop("__round_wavelengths", 1)))
+
+    nodes = retrieve_table(database, 
+        """SELECT DISTINCT(node) FROM line_abundances WHERE element = %s
+        AND ion = %s ORDER BY node ASC""", (element, ion))["node"]
 
     # Get all the data and group abundances for each FILENAME (CNAME/NODE)
     data = retrieve_table(database, 
         "SELECT * FROM line_abundances WHERE element = %s AND ion = %s",
         (element, ion))
+    if np.isfinite(data["abundance"]).sum() == 0: return None
+
     data = data.group_by(["filename"]) # Or cname/node would do
     percentiles = { w: { n: [] for n in nodes } for w in wavelengths }
     for i, group in enumerate(data.groups):
@@ -804,7 +970,7 @@ def percentiles(database, element, ion, bins=20, **kwargs):
 
     # Each line should be in its own axes, and each axes will have multiple hist
     N_lines, N_nodes = len(wavelengths), len(nodes)
-    cols = kwargs.pop("columns", 4)
+    cols = min([kwargs.pop("columns", 4), N_lines])
     rows = N_lines/cols + [0, 1][N_lines % cols > 0]
     fig, axes = plt.subplots(rows, cols, figsize=(3*cols, 3*rows))
     axes = axes.flatten()
@@ -837,13 +1003,19 @@ def percentiles(database, element, ion, bins=20, **kwargs):
         if ax.is_first_col():
             ax.set_ylabel("$N$")
 
+    # Hide extra axes.
+    for ax in axes[N_lines:]:
+        ax.set_visible(False)
+        ax.set_frame_on(False)
+
     # Put the legend in the bluest axes.
     _ = [ax for ax in axes if len(ax.patches) == N_nodes][0]
     axes[0].legend(*_.get_legend_handles_labels(), loc="upper left",
         frameon=False, fontsize=14)
 
-    fig.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.95,
-        wspace=0.15, hspace=0.20)
+    fig.tight_layout()
+    #fig.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.95,
+    #    wspace=0.15, hspace=0.20)
     
     return fig
 
@@ -863,7 +1035,10 @@ if __name__ == "__main__":
     db = pg.connect(dbname="arc")
 
     #tellurics(db)#, "Si", 1)
-    percentiles(db, "Si", 1)
+    #percentiles(db, "Si", 1)
+    fig = line_abundances(db, "Si", 1, "feh", aux_column="teff",
+        aux_extent=(3500, 7500))
+    fig.savefig("figures/tmp.png")
     raise a
     #transition_covariance(db, "Si", 1)
     #mean_abundance_against_stellar_parameters(db, "Si", 1)

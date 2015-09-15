@@ -45,6 +45,9 @@ if __name__ == "__main__":
 
 
     figures = {
+        "percentile": plot.percentiles,
+    }
+    """
         "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
         "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
         "abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
@@ -61,6 +64,8 @@ if __name__ == "__main__":
             {"rew_on_x_axis": False, "x_extent": (6, 9), "y_extent": (-1.5, 1.5)}),    
     }
 
+    """
+
     database = pg.connect(dbname="arc")
-    for i in range(3, 5):
+    for i in range(1, 5):
         make_figures(figures, database, "Si", i)
