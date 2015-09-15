@@ -6,8 +6,8 @@ Element order
 
 - [ ] `SI1`: Neutral Silicon Abundance
 - [ ] `SI2`: Ionised Silicon Abundance
-- [ ] `SI3`: Doubly Ionised Silicon Abundance
-- [ ] `SI4`: Triply Ionised Silicon Abundance
+- [X] `SI3`: Doubly Ionised Silicon Abundance `[no data]`
+- [X] `SI4`: Triply Ionised Silicon Abundance `[no data]`
 - [ ] `MG1`: Neutral Magnesium Abundance
 - [ ] `CA1`: Neutral Calcium Abundance
 - [ ] `CA2`: Ionised Calcium Abundance

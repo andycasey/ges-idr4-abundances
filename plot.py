@@ -60,6 +60,7 @@ def mean_abundance_against_stellar_parameters(database, element, ion, node=None,
         fig, (ax_teff, ax_logg, ax_feh) = plt.subplots(3)
         data = retrieve_table(database, "SELECT teff, logg, feh, {0}, nl_{0} "\
             "FROM node_results WHERE node = %s".format(column), (node, ))
+        if data is None or np.isfinite(data[column]).sum() == 0: continue
 
         _scatter_elements(ax_teff, data, "teff", column, limits=limits,
             errors=errors, color_label="nl_{}".format(column))
@@ -525,6 +526,10 @@ def mean_abundance_differences(database, element, ion, bins=None, **kwargs):
         Z_uncertainties[i, :] = data["e_{}".format(column)]
         #data_upper[i, :] = data["upper_{}".format(column)]
 
+    if 2 > np.max(np.sum(np.isfinite(Z), axis=0)):
+        # No data for any star from 2 nodes to compare against.
+        return None
+
     bins = bins or np.arange(-0.50, 0.55, 0.05)
     return corner_scatter(Z, uncertainties=Z_uncertainties,
         labels=map(str.strip, nodes), bins=bins, **kwargs)
@@ -555,7 +560,7 @@ def individual_line_abundance_differences(database, element, ion, node,
     unique_wavelengths = retrieve_table(database, """SELECT DISTINCT(wavelength)
         FROM line_abundances WHERE node = %s and element = %s and ion = %s
         ORDER BY wavelength ASC""", (node, element, ion))
-    if len(unique_wavelengths) == 0: return
+    if unique_wavelengths is None or len(unique_wavelengths) == 0: return
     unique_wavelengths = unique_wavelengths["wavelength"]
 
     # Get all other node names
@@ -595,7 +600,7 @@ def individual_line_abundance_differences(database, element, ion, node,
 
     scatter_kwargs.update(kwargs)
 
-    fig, axes = plt.subplots(N_nodes, N_lines, figsize=(3 + 5*N_lines, 0.5 + 2*N_nodes))
+    fig, axes = plt.subplots(N_nodes, N_lines, figsize=(2 + 7*N_lines, 0.5 + 2*N_nodes))
 
     for i, wavelength in enumerate(unique_wavelengths):
         for j, comparison_node in enumerate(comparison_nodes):
