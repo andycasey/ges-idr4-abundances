@@ -7,6 +7,7 @@ from collections import Counter
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from colormaps import (magma, inferno, plasma, viridis)
+from scipy.stats import percentileofscore as score
 
 import numpy as np
 from astropy.table import Table
@@ -690,6 +691,71 @@ def individual_line_abundance_differences(database, element, ion, node,
         cbar.set_label(r"$\log\left(\frac{W}{\lambda}\right)$")
 
     return fig
+
+
+def percentiles(database, element, ion, bins=None):
+    """
+    Show histograms of the percentile position for each line.
+
+    :param database:
+        A database connection.
+
+    :param element:
+        The atomic element of interest.
+
+    :type element:
+        str
+
+    :param ion:
+        The ionisation stage of the species of interest (1 indicates neutral).
+
+    :type ion:
+        int
+    """
+
+    # Get all the unique wavelengths for this species.
+    wavelengths = retrieve_table(database, """SELECT DISTINCT(wavelength)
+        FROM line_abundances ORDER BY wavelength ASC""")["wavelength"]
+    nodes = retrieve_table(database, 
+        "SELECT DISTINCT(node) FROM line_abundances")["node"]
+
+    # Get all the data and group abundances for each FILENAME (CNAME/NODE)
+    data = retrieve_table(database, 
+        "SELECT * FROM line_abundances WHERE element = %s AND ion = %s",
+        (element, ion))
+    data = data.group_by(["filename"]) # Or cname/node would do
+    percentiles = { w: { n: for n in nodes } for w in wavelengths }
+    for group in data.groups:
+
+        # This is already grouped by CNAME/node
+        node = group["node"][0]
+        finite = np.isfinite(group["abundance"])
+        for line, is_finite in zip(group, finite):
+            if not is_finite: continue
+            percentiles[line["wavelength"]][node].append(
+                score(group["abundance"][finite], line["abundance"]))
+
+    # Each line should be in its own axes, and each axes will have multiple hist
+    N_lines, N_nodes = len(wavelengths), len(nodes)
+    fig, axes = plt.subplots(N_lines)
+
+    if isinstance(bins, int): bins = np.linspace(0, 100, bins + 1)
+    kwds = { "bins": bins, "histtype": "step" }
+
+    for i, (ax, wavelength) in enumerate(zip(axes, wavelengths)):
+
+        # TODO: colors for each node.
+        # TODO: legend in final figure.
+        for node in nodes:
+            ax.hist(percentiles[wavelength][node], **kwds)
+
+        ax.set_title(wavelength)
+
+
+    raise a
+
+    return fig
+
 
 
 if __name__ == "__main__":
