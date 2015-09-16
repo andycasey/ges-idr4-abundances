@@ -24,5 +24,11 @@ In the right-hand panel, the differential (node-to-node for a given star/spectru
 
 ![differential](http://www.ast.cam.ac.uk/~arc/ges-idr4/SI2/differential-line-abundances.png)
 
+Two things are immediately clear from the figure above:
+
+1. EPINARBO abundances for 6347.1 are systematically lower than those of Lumba and MyGIsFOS
+
+2. Each node has systematic offsets for the 6371.4 line, but the width of their distributions as approximately the same.
+
 
 **Do the deviations correlate with REW?**
