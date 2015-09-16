@@ -85,15 +85,15 @@ Line-to-line scatter
 --------------------
 
 - [X] Element abundance/equivalent width covariance (`plot.transition_covariance`)
-- [ ] Residuals of one line abundance compared to mean abundance (y-axis) against radial velocity (x-axis) to look for lines impacted by tellurics
-- [ ] Histogram showing the percentile of one line abundance with respect to the distribution of abundances for a given star. This should show "where" a line always sits in a distribution of abundances for a given line (is it always high, always low, or spread everywhere?)
-- [ ] Node-to-node scatter for one line compared to the node-to-node scatter for an element (show as histograms) 
-- [ ] Are some lines saturating (and the broadening not being treated correctly)? Show node-to-node scatter for a given line (y-axis) with respect to the reduced equivalent width
+- [X] Residuals of one line abundance compared to mean abundance (y-axis) against radial velocity (x-axis) to look for lines impacted by tellurics (`plot.tellurics`)
+- [X] Histogram showing the percentile of one line abundance with respect to the distribution of abundances for a given star. This should show "where" a line always sits in a distribution of abundances for a given line (is it always high, always low, or spread everywhere?) (`plot.percentiles`)
+- [X] Node-to-node scatter for one line compared to the node-to-node scatter for an element (show as histograms) (`plot.differential_line_abundances`) 
+- [X] Are some lines saturating (and the broadening not being treated correctly)? Show node-to-node scatter for a given line (y-axis) with respect to the reduced equivalent width `[done, but missing large EWs]`
 
 Node-to-node scatter
 --------------------
 - [X] Corner plots showing mean abundance from all nodes, compared to each other. (`plot.mean_abundance_differences`)
-- [ ] Distributions showing node-to-node scatter from node A to all other nodes.
+- [ ] Distributions showing node-to-node scatter from node A to all other nodes. (`plot.differential_line_abundances`)
 - [ ] Distributions showing node-to-node scatter from node A to all other nodes, as grouped by the radiative transfer code used.
 
 
