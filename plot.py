@@ -3,6 +3,7 @@
 """ Plots."""
 
 import logging
+import itertools
 from collections import Counter
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
@@ -13,6 +14,53 @@ import numpy as np
 from astropy.table import Table
 
 import utils
+
+
+def calculate_differential_abundances(X, full_output=False):
+    N_entries, N_nodes = X.shape
+    assert 30 > N_nodes, "Are you sure you gave X the right way around?"
+    combinations = list(itertools.combinations(range(N_nodes), 2))
+    Z = np.vstack([X[:, a] - X[:, b] for a, b in combinations]).T
+    if full_output:
+        return (Z, combinations)
+
+    return Z
+
+
+
+
+def match_node_abundances(database, element, ion, **kwargs):
+    """
+    Return an array of matched-abundances.
+    """
+
+    data = retrieve_table(database,
+        """SELECT * FROM line_abundances WHERE element = %s AND ion = %s
+        ORDER BY node ASC""", (element, ion))
+    data["wavelength"] \
+        = np.round(data["wavelength"], kwargs.pop("__round_wavelengths", 1))
+
+    nodes = sorted(set(data["node"]))
+    unique_wavelengths = sorted(set(data["wavelength"]))
+
+    # Group data by spectrum_filename_stub and wavelength
+    data = data.group_by(["wavelength", "spectrum_filename_stub"])
+
+    # Each group should contain at most N_node entries.
+    assert len(nodes) >= np.diff(data.groups.indices).max()
+
+    X = np.nan * np.ones((len(data.groups), len(nodes)))
+    for i, group in enumerate(data.groups):
+        print("matching", i, len(data.groups))
+        for entry in group:
+            j = nodes.index(entry["node"])
+            X[i, j] = entry["abundance"]
+
+    # Return other parameters for each group.
+
+    corresponding_data = data[data.groups.indices[:-1]]
+
+    return (X, nodes, corresponding_data)
 
 
 def label(text_label):
@@ -171,6 +219,9 @@ def transition_heatmap(database, element, ion, column="abundance", linear=False,
         raise ValueError("column '{0}' does not exist".format(column))
 
     # Identify the unique nodes and wavelengths.
+    data["wavelength"] \
+        = np.round(data["wavelength"], kwargs.pop("__round_wavelengths", 1))
+
     nodes = sorted(set(data["node"]))
     wavelengths = sorted(set(data["wavelength"]))
     N_nodes, N_wavelengths = map(len, (nodes, wavelengths))
@@ -699,7 +750,7 @@ def individual_line_abundance_differences(database, element, ion, node,
     return fig
 
 def differential_line_abundances(database, element, ion, bins=50, 
-    absolute_extent=(6, 9), differential_extent=None, **kwargs):
+    absolute_extent=None, differential_extent=(-0.5, 0.5), **kwargs):
     """
     Show histograms of the absolute and differential line abundances for a given
     element and ion.
@@ -735,7 +786,7 @@ def differential_line_abundances(database, element, ion, bins=50,
 
     # Histograms be square as shit.
     scale = 2.0
-    wspace, hspace = 0.1, 0.1
+    wspace, hspace = 0.3, 0.2
     lb, tr = 0.5, 0.2
     ys = scale * N_lines + scale * (N_lines - 1) * wspace
     xs = scale * K + scale * (K - 1) * hspace
@@ -762,26 +813,28 @@ def differential_line_abundances(database, element, ion, bins=50,
     use = np.isfinite(data["abundance"]) * (data["upper_abundance"] == 0)
     data = data[use]
 
-    if absolute_extent is None:
-        bin_min, bin_max = data["abundance"].min(), data["abundance"].max()
-    else:
-        bin_min, bin_max = absolute_extent
-
+    bin_min, bin_max = absolute_extent \
+        or (data["abundance"].min(), data["abundance"].max())
+   
     hist_kwds = {
         "histtype": "step",
-        "bins": np.linspace(absolute_extent[0], absolute_extent[1], bins + 1),
+        "bins": np.linspace(bin_min, bin_max, bins + 1),
         "normed": True,
     }
+    full_distribution_color = "k"
+    comp_distribution_color = "r"
 
     for i, (ax, wavelength) in enumerate(zip(axes.T[0], unique_wavelengths)):
-    
+        print("Doing axes 1", i)
+
         # Show the full distribution.
-        ax.hist(data["abundance"], color="k", **hist_kwds)
+        ax.hist(data["abundance"], color=full_distribution_color, **hist_kwds)
 
         # Show the distribution for this wavelength.
-        ax.hist(data["abundance"][data["wavelength"] == wavelength], color="b",
-            **hist_kwds)
+        match = data["wavelength"] == wavelength
+        ax.hist(data["abundance"][match], color=comp_distribution_color, **hist_kwds)
 
+        ax.xaxis.set_major_locator(MaxNLocator(5))
         ax.yaxis.set_major_locator(MaxNLocator(5))
         if not ax.is_last_row():
             ax.set_xticklabels([])
@@ -789,28 +842,126 @@ def differential_line_abundances(database, element, ion, bins=50,
         else:
             ax.set_xlabel("{0} {1}".format(element, ion))
 
+        
+        ax.text(0.95, 0.95, len(data), transform=ax.transAxes,
+            verticalalignment="top", horizontalalignment="right",
+            color=full_distribution_color)
+        ax.text(0.95, 0.95, "\n{}".format(match.sum()), transform=ax.transAxes,
+            verticalalignment="top", horizontalalignment="right",
+            color=comp_distribution_color)
+
+
     # Plot the full distribution of differential abundances.
     # (but first,..) determine the full matrix of differential abundances.
-    nodes = retrieve_table(database, """SELECT DISTINCT ON (node) node
-        FROM line_abundances ORDER BY node ASC""")["node"]
-    N_nodes = len(nodes)
-    differential_abundances = np.nan * np.ones((N_nodes, N_lines))
+    X, nodes, diff_data = match_node_abundances(database, element, ion)
 
-    # Group the data by wavelength, element, ion (nodes will be different)
-    raise a
+    # Calculate the full differential abundances.
+    X_diff, indices = calculate_differential_abundances(X, full_output=True)
+    X_diff = X_diff[np.isfinite(X_diff)]
+
+    b_min, b_max = differential_extent or (np.nanmin(X_diff), np.nanmax(X_diff))
+    hist_kwds["bins"] = np.linspace(b_min, b_max, bins + 1)
+
+    for i, (ax, wavelength) in enumerate(zip(axes.T[1], unique_wavelengths)):
+        print("Doing axes 2", i)
+
+        if ax.is_first_row():
+            ax.text(0.05, 0.95, r"$\mu = {0:.2f}$" "\n" r"$\sigma = {1:.2f}$".format(
+                np.nanmean(X_diff), np.nanstd(X_diff)),  fontsize=10,
+                transform=ax.transAxes, color=full_distribution_color,
+                verticalalignment="top", horizontalalignment="left")
+                
+        # Show the full distribution of differential abundances.
+        ax.hist(X_diff, color=full_distribution_color, **hist_kwds)
+
+        # Show the distribution of differential abundances for this wavelength.
+        match = diff_data["wavelength"] == wavelength
+        X_diff_wavelength = calculate_differential_abundances(X[match]).flatten()
+        if np.isfinite(X_diff_wavelength).sum() > 0:
+            ax.hist(X_diff_wavelength, color=comp_distribution_color, **hist_kwds)
+
+        ax.set_title(r"${0}$".format(wavelength))
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+        if not ax.is_last_row():
+            ax.set_xticklabels([])
+        else:
+            ax.set_xlabel(r"$\Delta${0} {1}".format(element, ion))
+
+        ax.text(0.95, 0.95, X_diff.size, transform=ax.transAxes,
+            verticalalignment="top", horizontalalignment="right",
+            color=full_distribution_color)
+        ax.text(0.95, 0.95, "\n{}".format(np.isfinite(X_diff_wavelength).sum()),
+            transform=ax.transAxes,
+            verticalalignment="top", horizontalalignment="right",
+            color=comp_distribution_color)
+        
 
 
+    # Plot the node-to-node distribution of the differential abundances.
+    # Node X compared to all others
+    # Node Y compared to all others, etc.
+    cmap = kwargs.pop("cmap", plt.cm.Paired)
+    cmap_indices = np.linspace(0, 1, len(nodes))
 
-    #for i, (ax, wavelength) in enumerate(zip(axes.T[1], unique_wavelengths)):
+    for i, (ax, wavelength) in enumerate(zip(axes.T[2], unique_wavelengths)):
+        print("Doing axes 3", i)
+
+        # Show the full distribution of differential abundances.
+
+        # Show the distribution of differential abundances for each node.
+        match = diff_data["wavelength"] == wavelength
+        X_diff_wavelength = calculate_differential_abundances(X[match])
+
+        if np.any(np.isfinite(X_diff_wavelength)):
+            ax.hist(X_diff_wavelength.flatten(), color=full_distribution_color, **hist_kwds)
+
+        else:
+            ax.set_ylim(0, 1) # For prettyness
+
+        ax.text(0.95, 0.95, np.isfinite(X_diff_wavelength).sum(),
+            transform=ax.transAxes, color=full_distribution_color,
+            verticalalignment="top", horizontalalignment="right")
+        
+
+        for j, node in enumerate(nodes):
+            ax.plot([], [], label=node, c=cmap(cmap_indices[j]))
+
+            # This -1, +1 business ensures the third column always contains
+            # Node - someone else.
+            X_diff_wavelength_node = np.hstack([[-1, +1][j == idx[0]] * \
+                X_diff_wavelength[:, k].flatten() \
+                for k, idx in enumerate(indices) if j in idx])
+
+            print(wavelength, node, np.isfinite(X_diff_wavelength_node).sum())
+            if np.any(np.isfinite(X_diff_wavelength_node)):
+                ax.hist(X_diff_wavelength_node, color=cmap(cmap_indices[j]),
+                    **hist_kwds)
+            
+
+            ax.text(0.95, 0.95, "{0}{1}".format("\n"*(j + 1), np.isfinite(X_diff_wavelength_node).sum()),
+                transform=ax.transAxes, verticalalignment="top",
+                horizontalalignment="right", color=cmap(cmap_indices[j]))
+
+        if np.any(np.isfinite(X_diff_wavelength)):
+            ax.text(0.05, 0.95, r"$\mu = {0:.2f}$" "\n" r"$\sigma = {1:.2f}$".format(
+                np.nanmean(X_diff_wavelength), np.nanstd(X_diff_wavelength)),
+                fontsize=10, transform=ax.transAxes, color=full_distribution_color,
+                verticalalignment="top", horizontalalignment="left")
+                
+
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+        if not ax.is_last_row():
+            ax.set_xticklabels([])
+        else:
+            ax.set_xlabel(r"$\Delta${0} {1}".format(element, ion))
 
 
+    axes.T[2][0].legend(loc="upper left", fontsize=10, frameon=False)
 
+    return fig
 
-    fig.savefig("figures/tmp.png")
-
-    raise a
-
-    # For each individual line, do the match ups and comparisons
 
 def line_abundances(database, element, ion, reference_column, aux_column=None,
     show_node_comparison=True, show_line_comparison=True, uncertainties=False,
