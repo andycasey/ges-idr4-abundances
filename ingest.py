@@ -64,7 +64,7 @@ def parse_line_abundances(filename):
                     metadata["object"] = line.split("OBJECT")[1].strip()
 
             else:
-                assert len(metadata) == 5
+                assert len(metadata) == 6
 
                 # Split up the row.
                 """
@@ -161,7 +161,7 @@ def create_tables(connection):
         cname char(16) not null,
         code char(30) not null,
         object char(21) not null,
-        filename char(140) not null,
+        abundance_filename char(140) not null,
         spectrum_filename_stub char(140) not null
         );""")
 
