@@ -6,6 +6,7 @@ import os
 import psycopg2 as pg
 import plot
 
+import matplotlib.pyplot as plt
 
 
 
@@ -43,19 +44,22 @@ def make_figures(figures, database, element, ion, format="png"):
 
 if __name__ == "__main__":
 
-
+    absolute_extent = (5, 9)
     figures = {
+        "compare-solar": plot.compare_solar,
+        "compare-m67-1194": plot.compare_m67_twin,
         "percentile": plot.percentiles,
+        "differential-line-abundances": (plot.differential_line_abundances,
+            { "absolute_extent": absolute_extent }),
         "x-fe-abundances": (plot.line_abundances, { "reference_column": "feh",
             "aux_column": "teff", "aux_extent": (3500, 7500) }),
-    }
-    """
         "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
         "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
         "abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
         "ew-covariance": (plot.transition_covariance, {"column": "ew"}),
         "mean-abundance-sp": plot.mean_abundance_against_stellar_parameters,
-        "mean-abundance-differences": plot.mean_abundance_differences,
+        "mean-abundance-differences": (plot.mean_abundance_differences, {
+            "extent": absolute_extent }),
         "line-abundances-rew": (plot.all_node_individual_line_abundance_differences,
             {"rew_on_x_axis": True}),
         "line-abundances": (plot.all_node_individual_line_abundance_differences,
@@ -63,11 +67,79 @@ if __name__ == "__main__":
         "line-abundances-rew-clip": (plot.all_node_individual_line_abundance_differences,
             {"rew_on_x_axis": True, "x_extent": (-6.5, -4), "y_extent": (-1.5, 1.5), "vmin": 6, "vmax": 9}),
         "line-abundances-clip": (plot.all_node_individual_line_abundance_differences,
-            {"rew_on_x_axis": False, "x_extent": (6, 9), "y_extent": (-1.5, 1.5)}),    
+            {"rew_on_x_axis": False, "x_extent": absolute_extent, "y_extent": (-1.5, 1.5)}),    
     }
 
-    """
+    species = [
+    #    ("Si", 1), # Done
+    #    ("Si", 2), # Done
+        ("Mg", 1),
+        ("Ca", 1),
+        ("Ca", 2),
+        ("Al", 1),
+        ("Al", 3),
+        ("Na", 1),
+        ("S", 1),
+        ("S", 2),
+        ("S", 3),
+        ("Ne", 1),
+        ("Ne", 2),
+        ("Ni", 1),
+        ("Zn", 1),
+        ("Cr", 1),
+        ("Cr", 2),
+        ("Sc", 1),
+        ("Sc", 2),
+        ("Cu", 1),
+        ("Co", 1),
+        ("Mn", 1),
+        ("Zr", 1),
+        ("Zr", 2),
+        ("V", 1),
+        ("V", 2),
+        ("O", 1),
+        ("O", 2),
+        ("Ti", 1),
+        ("Ti", 2),
+        ("Fe", 1),
+        ("Fe", 2),
+        ("Fe", 3),
+        ("La", 2),
+        ("Ba", 2),
+        ("Y", 1),
+        ("Y", 2),
+        ("C", 1),
+        ("C", 2),
+        ("C", 3),
+        #("C_C", )
+        #("N_C", )
+        ("N", 1),
+        ("N", 2),
+        ("Li", 1),
+        ("Ru", 1),
+        ("Sr", 1),
+        ("Dy", 2),
+        ("Ce", 2),
+        ("Pr", 2),
+        ("Nb", 1),
+        ("Nd", 2),
+        ("Mo", 1),
+        ("Eu", 2),
+        ("Gd", 2),
+        ("Sm", 2),
+    ]
 
     database = pg.connect(dbname="arc")
-    for i in range(1, 5):
-        make_figures(figures, database, "Si", i)
+
+
+    #make_figures(figures, database, "Si", 1)
+
+    for element, ion in species:
+        try:
+            make_figures(figures, database, element, ion)
+        except:
+            None
+        plt.close("all")
+
+    #for i in range(1, 5):
+    #    make_figures(figures, database, "Si", i)

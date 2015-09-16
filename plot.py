@@ -354,6 +354,163 @@ def tellurics(database, velocity_bin=1, wavelength_bin=0.5,
     raise a
 
 
+def compare_m67_twin(database, element, ion, bins=20, extent=None, **kwargs):
+
+
+    # Join the line abundances table with the node_results table for cnames like
+    # the M67 twin (1194), ensuring we retrieve the SNR.
+    data = retrieve_table(database, """SELECT * FROM line_abundances l JOIN (
+        SELECT DISTINCT ON (cname) cname, ges_fld, object, snr FROM node_results
+        ORDER BY cname) n ON (l.element = '{0}' AND l.ion = '{1}' 
+        AND l.cname = n.cname 
+        AND n.ges_fld LIKE 'M67%' AND n.object = '1194')""".format(element, ion)) # Naughty.
+
+    return _compare_solar_like_abundances(data, element, ion, bins=bins,
+        extent=extent, **kwargs)
+
+
+
+def compare_solar(database, element, ion, bins=20, extent=None, **kwargs):
+    """
+    Show the distributions of abundances for each node, each line, just for the
+    solar spectra.
+    """
+
+    # Join the line abundances table with the node_results table for cnames like
+    # the sun, ensuring we retrieve the SNR.
+    data = retrieve_table(database, """SELECT * FROM line_abundances l JOIN
+        (SELECT DISTINCT ON (cname) cname, snr FROM node_results ORDER BY cname)
+        n ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
+            AND l.cname LIKE 'ssssss%')""".format(element, ion)) # Naughty.
+
+    return _compare_solar_like_abundances(data, element, ion, bins=bins,
+        extent=extent, **kwargs)
+
+
+def _compare_solar_like_abundances(data, element, ion, bins=20, extent=None,
+    **kwargs):
+
+    # Get the unique nodes and wavelengths.
+    data["wavelength"] \
+        = np.round(data["wavelength"], kwargs.pop("__round_wavelengths", 1))
+    nodes, wavelengths = [sorted(set(data[_])) for _ in ("node", "wavelength")]
+    N_nodes, N_wavelengths = map(len, (nodes, wavelengths))
+
+    # Create the figures
+    cmap = kwargs.pop("cmap", plt.cm.Paired)
+    cmap_indices = np.linspace(0, 1, N_nodes)
+    bin_min, bin_max = \
+        extent or (np.nanmin(data["abundance"]), np.nanmax(data["abundance"]))
+
+    hist_kwds = {
+        "histtype": "step",
+        "bins": np.linspace(bin_min, bin_max, bins + 1),
+        "normed": True,
+        "lw": 2
+    }
+    scatter_kwds = {
+        "s": 50,
+        "zorder": 10,
+    }
+    span_kwds = {
+        "alpha": 0.5,
+        "edgecolor": "none",
+        "zorder": -100,
+    }
+    hline_kwds = { "zorder": -10, "lw": 2}
+
+    # Histograms be square as shit.
+    K = 2
+    scale = 2.0
+    wspace, hspace = 0.45, 0.3
+    lb, tr = 0.5, 0.2
+    ys = scale * N_wavelengths + scale * (N_wavelengths - 1) * wspace
+    xs = scale * K + scale * (K - 1) * hspace
+    
+    xdim = lb * scale + xs + tr * scale
+    ydim = lb * scale + ys + tr * scale
+
+    fig, axes = plt.subplots(N_wavelengths, K, figsize=(xdim, ydim))
+    fig.subplots_adjust(
+        left=(lb * scale)/xdim,
+        bottom=(lb * scale)/ydim,
+        right=(lb * scale + xs)/xdim,
+        top=(tr * scale + ys)/ydim,
+        wspace=wspace, hspace=hspace)
+
+    for i, (wavelength, (ax_hist, ax_snr)) in enumerate(zip(wavelengths, axes)):
+
+        # Show the normalised distribution of absolute abundances from all nodes
+        ok = (data["wavelength"] == wavelength) * np.isfinite(data["abundance"])
+        if ok.sum() > 0:
+            ax_hist.hist(data["abundance"][ok], color="k", **hist_kwds)
+        ax_hist.plot([], [], color="k", label="All nodes")
+        ax_hist.set_title(wavelength)
+
+        # For each node, show the histogram of absolute abundances.
+        for j, node in enumerate(nodes):
+            node_match = ok * (data["node"] == node)
+            print(node, data["abundance"][node_match])
+            if np.any(np.isfinite(data["abundance"][node_match])):
+                ax_hist.hist(data["abundance"][node_match],
+                    color=cmap(cmap_indices[j]), **hist_kwds)
+
+            # For the legend.
+            ax_hist.plot([], [], color=cmap(cmap_indices[j]), label=node)
+
+        # For each node, show the points and uncertainties as a function of S/N
+        for j, node in enumerate(nodes):
+            node_match = ok * (data["node"] == node)
+
+            c = cmap(cmap_indices[j])
+            x, y = data["snr"][node_match], data["abundance"][node_match]
+            ax_snr.errorbar(x, y, yerr=data["e_abundance"][node_match], lc="k",
+                ecolor="k", aa=True, fmt=None, mec="k", mfc="w", ms=6, zorder=1)
+            ax_snr.scatter(x, y, facecolor=c, **scatter_kwds)
+
+            # Show some mean + std.dev range.
+            mean, sigma = np.nanmean(y), np.nanstd(y)
+            ax_snr.axhline(mean, c=c, **hline_kwds)
+            if np.isfinite(mean * sigma):
+                ax_snr.axhspan(mean - sigma, mean + sigma, facecolor=c,
+                    **span_kwds)
+
+            ax_snr.set_ylim(ax_hist.get_xlim())
+            if sigma == 0:
+                ax_snr.set_xlim(-10 + np.mean(x), np.mean(x) + 10)
+            else:
+                ax_snr.set_xlim(max([0, ax_snr.get_xlim()[0]]), ax_snr.get_xlim()[1])
+
+        ax_hist.xaxis.set_major_locator(MaxNLocator(5))
+        ax_hist.yaxis.set_major_locator(MaxNLocator(5))
+        ax_hist.set_ylim(0, ax_hist.get_ylim()[1])
+
+        label = r"{0} {1}".format(element, ion)
+        ax_snr.set_ylabel(label)
+        ax_hist.set_ylabel(label)
+        
+        if not ax_hist.is_last_row():
+            ax_hist.set_xticklabels([])
+            ax_snr.set_xticklabels([])
+
+        else:
+            ax_snr.set_xlabel(r"$S/N$")
+            ax_hist.set_xlabel(label)
+
+        if ax_hist.is_first_row():
+            ax_hist.legend(loc="upper left", frameon=False, fontsize=12)
+
+        ax_snr.xaxis.set_major_locator(MaxNLocator(5))
+        ax_snr.yaxis.set_major_locator(MaxNLocator(5))
+
+        # Show the solar abundance.
+        ax_snr.axhline(utils.solar_abundance(element), c="k", lw=3,
+            label="Solar", zorder=1)
+        if ax_snr.is_first_row():
+            ax_snr.legend(loc="upper right", frameon=False, fontsize=12)
+
+    return fig
+
 
 
 def transition_covariance(database, element, ion, node=None, column="abundance",
@@ -372,18 +529,18 @@ def transition_covariance(database, element, ion, node=None, column="abundance",
         raise ValueError("column must be ew or abundance")
 
     args = [element, ion] + args_suffix
-    data = retrieve_table(database, """SELECT wavelength, filename, ew, abundance 
+    data = retrieve_table(database, """SELECT wavelength, spectrum_filename_stub, ew, abundance 
         FROM line_abundances WHERE element = %s and ion = %s""" + query_suffix,
          args)
     if data is None: return None
 
     # Arrange everything by filename.
-    filenames = retrieve_table(database, """SELECT DISTINCT(filename) FROM 
+    filenames = retrieve_table(database, """SELECT DISTINCT(spectrum_filename_stub) FROM 
         line_abundances WHERE element = %s AND ion = %s""" + query_suffix, args)
     wavelengths = retrieve_table(database, """SELECT DISTINCT(wavelength) FROM
         line_abundances WHERE element = %s AND ion = %s""" + query_suffix, args)
     
-    filenames = filenames["filename"]
+    filenames = filenames["spectrum_filename_stub"]
     wavelengths = np.sort(wavelengths["wavelength"])
 
     extra_matches = {}
@@ -392,7 +549,7 @@ def transition_covariance(database, element, ion, node=None, column="abundance",
     for i, filename in enumerate(filenames):
         for j, wavelength in enumerate(wavelengths):
             #print(i * len(wavelengths) + j, X.size)
-            indices = (data["filename"] == filename) \
+            indices = (data["spectrum_filename_stub"] == filename) \
                 * (data["wavelength"] == wavelength)
             if indices.sum() > 0:
                 if indices.sum() > 1:
@@ -554,7 +711,8 @@ def corner_scatter(data, labels=None, uncertainties=None, extent=None,
     return fig
 
 
-def mean_abundance_differences(database, element, ion, bins=None, **kwargs):
+def mean_abundance_differences(database, element, ion, bins=None, extent=None,
+    **kwargs):
     """
     Show the mean abundance differences from each node.
     """
@@ -584,7 +742,7 @@ def mean_abundance_differences(database, element, ion, bins=None, **kwargs):
 
     bins = bins or np.arange(-0.50, 0.55, 0.05)
     return corner_scatter(Z, uncertainties=Z_uncertainties,
-        labels=map(str.strip, nodes), bins=bins, **kwargs)
+        labels=map(str.strip, nodes), bins=bins, extent=extent, **kwargs)
 
 
     # x-axis = average REW
@@ -957,8 +1115,8 @@ def differential_line_abundances(database, element, ion, bins=50,
         else:
             ax.set_xlabel(r"$\Delta${0} {1}".format(element, ion))
 
-
-    axes.T[2][0].legend(loc="upper left", fontsize=10, frameon=False)
+    axes.T[0][0].legend(*axes.T[2][0].get_legend_handles_labels(),
+        loc="upper left", frameon=False, fontsize=10)
 
     return fig
 
@@ -1219,7 +1377,7 @@ def percentiles(database, element, ion, bins=20, **kwargs):
         (element, ion))
     if np.isfinite(data["abundance"]).sum() == 0: return None
 
-    data = data.group_by(["filename"]) # Or cname/node would do
+    data = data.group_by(["spectrum_filename_stub"]) # Or cname/node would do
     percentiles = { w: { n: [] for n in nodes } for w in wavelengths }
     for i, group in enumerate(data.groups):
         print(i, len(data.groups))
@@ -1298,12 +1456,19 @@ if __name__ == "__main__":
     import psycopg2 as pg
     db = pg.connect(dbname="arc")
 
+    fig = compare_solar(db, "Si", 2)
+    fig2 = compare_m67_twin(db, "Si", 2)
+    fig.savefig("figures/SI2/compare-solar.png")
+    fig2.savefig("figures/SI2/compare-m67-1194.png")
+    
+    raise a
     #tellurics(db)#, "Si", 1)
     #percentiles(db, "Si", 1)
     #fig = line_abundances(db, "Si", 1, "feh", aux_column="teff",
     #    aux_extent=(3500, 7500))
     #fig.savefig("figures/tmp.png")
-    fig = differential_line_abundances(db, "Si", 1)
+    fig = differential_line_abundances(db, "Si", 2, absolute_extent=(5, 9))
+    fig.savefig("figures/SI2/differential-line-abundances.png")
     raise a
     #transition_covariance(db, "Si", 1)
     #mean_abundance_against_stellar_parameters(db, "Si", 1)
