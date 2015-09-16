@@ -1,5 +1,5 @@
-SI2
-===
+Si 2
+====
 
 Abundances for `SI2` have been submitted from 3 WG11 nodes (`EPINARBO`, `Lumba`, `MyGIsFOS`), and equivalent widths (EW) are available from one node (`EPINARBO`). The EW sample has a hard cut at 120 mA, so there are no EWs larger than this. There are only 2 `SI2` transitions available: `6347.1` and `6371.4`.
 
@@ -28,7 +28,14 @@ Two things are immediately clear from the figure above:
 
 1. EPINARBO abundances for 6347.1 are systematically lower than those of Lumba and MyGIsFOS
 
-2. Each node has systematic offsets for the 6371.4 line, but the width of their distributions as approximately the same.
+2. Each node has different biases for the 6371.4 line, but the width of their distributions as approximately the same.
 
 
-**Do the deviations correlate with REW?**
+These biases are reflected in comparisons with the Sun, and to a lesser extent, M67-1194. Here is the Sun:
+
+![sun](http://www.ast.cam.ac.uk/~arc/ges-idr4/SI2/compare-solar.png)
+
+And M67-1194 (only one spectrum):
+
+![m67-1194](http://www.ast.cam.ac.uk/~arc/ges-idr4/SI2/compare-m67-1194.png) 
+
