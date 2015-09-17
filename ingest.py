@@ -133,6 +133,8 @@ def parse_line_abundances(filename):
                 else:
                     raise WTFError
 
+                # Assume no scaling/homogenisation for any abundances.
+                row["scaled_abundance"] = row["abundance"]
                 rows.append(row)
                 logger.debug(row)
 
@@ -145,6 +147,11 @@ def create_tables(connection):
 
     cursor.execute("""DROP TABLE IF EXISTS line_abundances;""")
     cursor.execute("""DROP TABLE IF EXISTS node_results;""")
+    cursor.execute("DROP TABLE IF EXISTS line_abundance_flags;")
+
+    cursor.execute("""CREATE TABLE line_abundance_flags(
+        description char(120) not null);""")
+    cursor.execute("""ALTER TABLE line_abundance_flags ADD COLUMN id BIGSERIAL PRIMARY KEY;""")
 
     cursor.execute("""CREATE TABLE line_abundances(
         node char(10) not null,
@@ -162,8 +169,11 @@ def create_tables(connection):
         code char(30) not null,
         object char(21) not null,
         abundance_filename char(140) not null,
-        spectrum_filename_stub char(140) not null
+        spectrum_filename_stub char(140) not null,
+        scaled_abundance real default 'NaN',
+        flags int default 0
         );""")
+    cursor.execute("ALTER TABLE line_abundances ADD COLUMN id BIGSERIAL PRIMARY KEY;")
 
     cursor.execute("""CREATE TABLE node_results(
         node char(10) not null,
@@ -613,6 +623,8 @@ def create_tables(connection):
         remark char(300),
         tech char(300)
         );""")
+
+    cursor.execute("ALTER TABLE node_results ADD COLUMN id BIGSERIAL PRIMARY KEY;")
     cursor.close()
 
     return None
@@ -627,26 +639,27 @@ if __name__ == "__main__":
 
     connection = pg.connect(dbname="arc")
     create_tables(connection)
+    connection.commit()
 
     from glob import glob
     files = glob("data/*/*.dat")
 
-    cursor = connection.cursor()
-    for filename in files:
-        print(filename)
-        line_abundances = parse_line_abundances(filename)
-        if len(line_abundances) == 0: continue
 
-        k = line_abundances[0].keys()
-        cursor.executemany("""INSERT INTO line_abundances({0}) VALUES ({1})"""\
-            .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
-            line_abundances)
-    cursor.close()
+    #cursor = connection.cursor()
+    #for filename in files:
+    #    print(filename)
+    #    line_abundances = parse_line_abundances(filename)
+    #    if len(line_abundances) == 0: continue
+
+    #    k = line_abundances[0].keys()
+    #    cursor.executemany("""INSERT INTO line_abundances({0}) VALUES ({1})"""\
+    #        .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
+    #        line_abundances)
+    #cursor.close()
     
     cursor = connection.cursor()
     from astropy.io import fits
     filenames = glob("data/*.fits")
-    filenames = list(set(filenames).difference(["data/GES_iDR4_WG11_EPINARBO.fits"]))
     for filename in filenames:
         image = fits.open(filename)
 
@@ -657,27 +670,33 @@ if __name__ == "__main__":
         for i, line in enumerate(image[2].data.base):
             row = {}
             row.update(default_row)
-            row.update({ k: v for k, v in zip(image[2].data.dtype.names, line.tolist())})
+            row.update({ k: v for k, v in zip(image[2].data.dtype.names, line.tolist()) if isinstance(v, (str, unicode)) or np.isfinite(v) })
             # Clean up strings because fuck.
             for k in row:
                 if isinstance(row[k], (str, unicode)):
                     row[k] = row[k].strip()
+
+                # EPINARBO:
+                if k.startswith("ENN_") and (isinstance(row[k], (str, unicode))\
+                    or not np.isfinite(row[k]) or row[k] < 0):
+                    row[k] = 0
+
+            if "STAR" in row:
+                del row["STAR"]
             rows.append(row)
 
         print("Inserting from {}".format(filename))
 
-        k = rows[0].keys()
-        for i in range(len(rows)/2):
-            r = rows[2*i:2*i+2] # Just in case something breaks.
-            cursor.executemany("""INSERT INTO node_results ({0}) VALUES ({1})"""\
-                .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
-                r)
+        for row in rows:
+            cursor.execute("INSERT INTO node_results ({0}) VALUES ({1});".format(
+                ", ".join(row.keys()), ", ".join(["%({})s".format(_) for _ in row.keys()])),
+            row)
 
         print("Done")
 
     # CREATE INDICES
     cursor.execute("""
-        create index cname_line_index on line_abundances (cname, element, ion);""")
+        create index cname_species_index on line_abundances (cname, element, ion);""")
 
     cursor.close()
 
