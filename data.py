@@ -16,11 +16,64 @@ logging.basicConfig(level=logging.DEBUG,
 logger = logging.getLogger("ges")
 
 
-def update(database, query, values=None, full_output=False, **kwargs):
+def update(database, query, values=None, **kwargs):
+    """
+    Update the database with a SQL query.
 
-    raise NotImplementedError
+    :param database:
+        A PostgreSQL database connection.
 
-def execute(database, query, values=None, full_output=False, **kwargs):
+    :type database:
+        :class:`~psycopg2.connection`
+
+    :param query:
+        The SQL query to execute.
+
+    :type query:
+        str
+
+    :param values: [optional]
+        Values to use when formatting the SQL string.
+
+    :type values:
+        tuple or dict
+    """
+
+    names, results, cursor = execute(database, query, values, **kwargs)
+    return cursor.rownumber
+    
+
+def retrieve(database, query, values=None, full_output=False, **kwargs):
+    """
+    Retrieve some data from the database.
+
+    :param database:
+        A PostgreSQL database connection.
+
+    :type database:
+        :class:`~psycopg2.connection`
+
+    :param query:
+        The SQL query to execute.
+
+    :type query:
+        str
+
+    :param values: [optional]
+        Values to use when formatting the SQL string.
+
+    :type values:
+        tuple or dict
+    """
+
+    names, results, cursor = execute(database, query, values,
+        fetch=True, **kwargs)
+    if not full_output:
+        return (names, results, cursor.rowcount)
+    return results
+
+
+def execute(database, query, values=None, fetch=False, **kwargs):
     """
     Execute some SQL from the database.
 
@@ -42,14 +95,16 @@ def execute(database, query, values=None, full_output=False, **kwargs):
     :type values:
         tuple or dict
     """
-    
+
     t_init = time()
     try:    
         with database.cursor() as cursor:
             cursor.execute(query, values)
-            results = cursor.fetchall()
+            if fetch: results = cursor.fetchall()
+            else: results = None
 
     except pg.ProgrammingError:
+        logger.exception("SQL query failed:")
         cursor.close()
         raise
     
@@ -57,11 +112,8 @@ def execute(database, query, values=None, full_output=False, **kwargs):
         logger.info("Took {0:.0f} ms for SQL query {1}".format(
             1e3 * (time() - t_init), " ".join((query % values).split())))
 
-    if full_output:
-        names = tuple([column[0] for column in cursor.description])
-        return (names, results, cursor.rowcount)
-
-    return results
+    names = tuple([column[0] for column in cursor.description])
+    return (names, results, cursor)
 
 
 def retrieve_table(database, query, values=None, prefixes=True):
@@ -93,7 +145,7 @@ def retrieve_table(database, query, values=None, prefixes=True):
         tuple of str
     """
 
-    names, rows, rowcount = execute(database, query, values, full_output=True)
+    names, rows, rowcount = retrieve(database, query, values, full_output=True)
 
     # TODO:
     if len(rows) == 0: return None
@@ -143,5 +195,5 @@ def retrieve_column(database, query, values=None, asarray=False):
         bool
     """
 
-    rows = execute(database, query, values)
+    rows = retrieve(database, query, values)
     return rows if not asarray else np.array(rows).flatten()
