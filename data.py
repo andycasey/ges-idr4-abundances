@@ -2,53 +2,142 @@
 
 """ Load the Gaia-ESO Survey iDR4 node abundances. """
 
+import logging
 import numpy as np
-from glob import glob
 from collections import Counter
+from time import time
 
+import psycopg2 as pg
 from astropy.table import Table
 
-def get_elements(extension):
-    """
-    Return the elemental abundance columns available in the extension.
-    """
+# Initiate logging.
+logging.basicConfig(level=logging.DEBUG,
+    format='%(asctime)-15s %(name)s %(levelname)s %(message)s')
+logger = logging.getLogger("ges")
 
-    return { column: comment for _, column, comment in extension.header.cards \
-        if "Abundance" in comment }
+
+def retrieve(database, query, values=None, full_output=False, **kwargs):
+    """
+    Retrieve some data from the database.
+
+    :param database:
+        A PostgreSQL database connection.
+
+    :type database:
+        :class:`~psycopg2.connection`
+
+    :param query:
+        The SQL query to execute.
+
+    :type query:
+        str
+
+    :param values: [optional]
+        Values to use when formatting the SQL string.
+
+    :type values:
+        tuple or dict
+    """
     
+    t_init = time()
+    try:    
+        with database.cursor() as cursor:
+            cursor.execute(query, values)
+            results = cursor.fetchall()
 
-
-def retrieve_table(database, query, values=None, prefix=True):
-
-    cursor = database.cursor()
-    cursor.execute(query, values)
-    names = [_[0] for _ in cursor.description]
-    results = cursor.fetchall()
-    if len(results) > 0:
-        # Do we have multiple columns? If so, prefix them.
-        duplicate_names = [k for k, v in Counter(names).items() if v > 1]
-        if len(duplicate_names) > 0 and prefix:
-            prefixes = []
-            counted = []
-            for name in names:
-                if name in duplicate_names:
-                    prefixes.append(counted.count(name))
-                    counted.append(name)
-                else:
-                    prefixes.append(-1)
-            names = [[n, "{0}.{1}".format(p, n)][p>=0] for p, n in zip(prefixes, names)]
-
-        t = Table(rows=results, names=names)
+    except pg.ProgrammingError:
         cursor.close()
-        return t
-    return None
+        raise
+    
+    else:
+        logger.info("Took {0:.0f} ms for SQL query {1}".format(
+            1e3 * (time() - t_init), " ".join((query % values).split())))
+
+    if full_output:
+        names = tuple([column[0] for column in cursor.description])
+        return (names, results)
+
+    return results
 
 
-def retrieve_column(database, query, values=None, asarray=True):
+def retrieve_table(database, query, values=None, prefixes=True):
+    """
+    Retrieve a named table from a database.
 
-    cursor = database.cursor()
-    cursor.execute(query, values)
-    names = [_[0] for _ in cursor.description]
-    results = cursor.fetchall()
-    cursor.close()
-    return results if not asarray else np.array(results).flatten()
+    :param database:
+        A PostgreSQL database connection.
+
+    :type database:
+        :class:`~psycopg2.connection`
+
+    :param query:
+        The SQL query to execute.
+
+    :type query:
+        str
+
+    :param values: [optional]
+        Values to use when formatting the SQL string.
+
+    :type values:
+        tuple or dict
+
+    :param prefixes: [optional]
+        Prefix duplicate column names with the given tuple.
+
+    :type prefixes:
+        tuple of str
+    """
+
+    names, rows = retrieve(database, query, values, full_output=True)
+
+    # TODO:
+    if len(rows) == 0: return None
+
+    counted_names = Counter(names)
+    duplicates = [k for k, v in counted_names.items() if v > 1]
+    if duplicates and prefixes:
+
+        use_prefixes = map(str, range(max(counted_names.values()))) \
+            if isinstance(prefixes, bool) else prefixes
+
+        # Put the prefixes and names in the right order and format for joining.
+        prefixes = [([], [use_prefixes[names[:i].count(n)]])[n in duplicates] \
+            for i, n in enumerate(names)]
+        names = [[n] for n in names]
+        names = [".".join(p + n) for p, n in zip(prefixes, names)]
+
+    return Table(rows=rows, names=names)
+
+
+def retrieve_column(database, query, values=None, asarray=False):
+    """
+    Retrieve a single (unnamed) column from a database.
+
+    :param database:
+        A PostgreSQL database connection.
+
+    :type database:
+        :class:`~psycopg2.connection`
+
+    :param query:
+        The SQL query to execute.
+
+    :type query:
+        str
+
+    :param values: [optional]
+        Values to use when formatting the SQL string.
+
+    :type values:
+        tuple or dict
+
+    :param asarray: [optional]
+        Return the data as a numpy array.
+
+    :type asarray:
+        bool
+    """
+
+    rows = retrieve(database, query, values)
+    return rows if not asarray else np.array(rows).flatten()

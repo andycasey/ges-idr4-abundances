@@ -6,6 +6,7 @@ __author__ = "Andy Casey <arc@ast.cam.ac.uk>"
 
 
 import data
+import numpy as np
 
 
 def create_table(database):
@@ -324,11 +325,12 @@ def homogenise_species(database, element, ion, **kwargs):
     from time import time
 
     t_init = time()
-    for cname in cnames:
-        result = homogenise_star_species(database, element, ion, cname, **kwargs)
+    results = []
+    for cname in cnames[:10]:
+        results.append(homogenise_star_species(database, element, ion, cname, **kwargs))
 
-    taken = time() - t_init
-    print("Time taken for {0} {1}: {2:.0f}".format(element, ion, taken))
+    taken = 1e3 * (time() - t_init)
+    print("Time taken for 10 stars in {0} {1}: {2:.0f} ms".format(element, ion, taken))
     raise a
 
 

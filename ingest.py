@@ -675,6 +675,10 @@ if __name__ == "__main__":
 
         print("Done")
 
+    # CREATE INDICES
+    cursor.execute("""
+        create index cname_line_index on line_abundances (cname, element, ion);""")
+
     cursor.close()
 
 
