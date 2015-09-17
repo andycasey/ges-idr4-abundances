@@ -16,9 +16,13 @@ logging.basicConfig(level=logging.DEBUG,
 logger = logging.getLogger("ges")
 
 
-def retrieve(database, query, values=None, full_output=False, **kwargs):
+def update(database, query, values=None, full_output=False, **kwargs):
+
+    raise NotImplementedError
+
+def execute(database, query, values=None, full_output=False, **kwargs):
     """
-    Retrieve some data from the database.
+    Execute some SQL from the database.
 
     :param database:
         A PostgreSQL database connection.
@@ -55,7 +59,7 @@ def retrieve(database, query, values=None, full_output=False, **kwargs):
 
     if full_output:
         names = tuple([column[0] for column in cursor.description])
-        return (names, results)
+        return (names, results, cursor.rowcount)
 
     return results
 
@@ -89,7 +93,7 @@ def retrieve_table(database, query, values=None, prefixes=True):
         tuple of str
     """
 
-    names, rows = retrieve(database, query, values, full_output=True)
+    names, rows, rowcount = execute(database, query, values, full_output=True)
 
     # TODO:
     if len(rows) == 0: return None
@@ -139,5 +143,5 @@ def retrieve_column(database, query, values=None, asarray=False):
         bool
     """
 
-    rows = retrieve(database, query, values)
+    rows = execute(database, query, values)
     return rows if not asarray else np.array(rows).flatten()

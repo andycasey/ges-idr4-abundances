@@ -187,19 +187,20 @@ def homogenise_line_abundances(database, element, ion, cname, wavelength,
         float
     """
 
-    # Get all of the line abundances for this element, ion, cname.
+    # Get all valid line abundances for this element, ion, cname.
     wavelength_tolerance = abs(wavelength_tolerance)
     if wavelength_tolerance > 0:   
         measurements = data.retrieve_table(database, """SELECT * 
             FROM line_abundances
-            WHERE element = %s AND ion = %s AND cname = %s
-            AND wavelength >= %s AND wavelength <= %s""",
-            (element, ion, cname, wavelength - wavelength_tolerance,
+            WHERE element = %s AND ion = %s AND cname = %s AND flags = 0
+            AND wavelength >= %s AND wavelength <= %s""", (element, ion, cname,
+                wavelength - wavelength_tolerance,
                 wavelength + wavelength_tolerance))
     else:
         measurements = data.retrieve_table(database, """SELECT *
             FROM line_abundances WHERE element = %s AND ion = %s AND cname = %s
-            AND wavelength = %s""", (element, ion, cname, wavelength))
+            AND flags = 0 AND wavelength = %s""",
+            (element, ion, cname, wavelength))
 
     assert measurements is not None
 
@@ -212,8 +213,12 @@ def homogenise_line_abundances(database, element, ion, cname, wavelength,
     #  for the same CNAME)
     spectra = set(measurements["spectrum_filename_stub"])
 
+    # Note that we are using scaled_abundance, not abundance, such that we can
+    # apply any offsets or scaling as necessary *before* the homogenisation
+    # begins.
+
     N_spectra = len(spectra)
-    N_measurements = np.isfinite(measurements["abundance"]).sum()
+    N_measurements = np.isfinite(measurements["scaled_abundance"]).sum()
 
     # Problems to address later:
     try:
@@ -236,8 +241,8 @@ def homogenise_line_abundances(database, element, ion, cname, wavelength,
 
     """
 
-    abundance_mean = np.nanmean(measurements["abundance"])
-    abundance_sigma = np.nanstd(measurements["abundance"])
+    abundance_mean = np.nanmean(measurements["scaled_abundance"])
+    abundance_sigma = np.nanstd(measurements["scaled_abundance"])
 
     # TODO: Create a node mask that tells us which nodes contributed here.
 
@@ -326,11 +331,11 @@ def homogenise_species(database, element, ion, **kwargs):
 
     t_init = time()
     results = []
-    for cname in cnames[:10]:
+    for cname in cnames[:1000]:
         results.append(homogenise_star_species(database, element, ion, cname, **kwargs))
 
-    taken = 1e3 * (time() - t_init)
-    print("Time taken for 10 stars in {0} {1}: {2:.0f} ms".format(element, ion, taken))
+    taken = (time() - t_init)
+    print("Time taken for 10 stars in {0} {1}: {2:.0f} s".format(element, ion, taken))
     raise a
 
 
@@ -342,15 +347,43 @@ if __name__ == "__main__":
 
     database = pg.connect(dbname="arc")
 
+    import flags
+
     drop_table(database) # Drop the table if it already exists.
     create_table(database)
+    flags.create_line_abundance_flag(database, "line abundance is unphysically high")
+    flags.create_line_abundance_flag(database, "i haven't had coffee yet")
+    flags.create_line_abundance_flag(database, "my wallet is missing")
+    flags.create_line_abundance_flag(database, "i love coffee yet")
+
+
+    moo = flags.search_line_abundance_flags(database, "coffee")
+    for k in moo:
+        assert flags.flag_exists(database, int(k))
+
+
+    flags.update_line_abundance_flag(database, (1, 2, 3), [1, 2, 3])
+    
+    raise a
 
     # It should always be that we do the following:
 
     # [ ] Mark line abundances that are obviously incorrect and should be removed
     # [ ] Calculate and apply any line/node-specific biases to the distributions
-    # [ ] The line abundances should be able to be homogenised per star/cname in
+    # [X] The line abundances should be able to be homogenised per star/cname in
     #     this file.
     #
+
+    # That means we need to be able to:
+    # [X] Select line abundances based on any constraints.
+    # [ ] Mark line abundances with some flag, with any constraints.
+    # [X] Give multiple flags for lines.
+
+    # [ ] Calculate and apply any line/node-specific biases to the distributions
+    #     (this should only use abundances that are not marked)
+
+    # The homogenised thing should just ignore anything with a mark > 0
+
+
 
     homogenise_species(database, "Si", 2)
