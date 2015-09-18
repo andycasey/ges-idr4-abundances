@@ -16,6 +16,7 @@ from astropy.table import Table
 import data
 import utils
 
+logger = logging.getLogger("ges")
 
 def calculate_differential_abundances(X, full_output=True):
     N_entries, N_nodes = X.shape
@@ -920,7 +921,7 @@ def individual_line_abundance_differences(database, element, ion, node,
 
 
 def differential_line_abundances_wrt_x(database, element, ion, parameter,
-    logarithmic=True, bins=25, extent=(-0.5, 0.5), **kwargs):
+    logarithmic=True, bins=25, x_extent=None, y_extent=(-0.5, 0.5), **kwargs):
     """
     Show the node differential line abundances for a given element and ion with
     respect to a given column in the node results or line abundances tables.
@@ -949,6 +950,12 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
     :type parameter:
         str
 
+    :param logarithmic: [optional]
+        Display logarithmic counts.
+
+    :type logarithmic:
+        bool
+
     :param bins: [optional]
         The number of bins to have in the differential abundances axes. The
         default bin number is 50.
@@ -956,10 +963,16 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
     :type bins:
         int
 
-    :param extent: [optional]
+    :param x_extent: [optional]
+        The lower and upper range of the x-axis values to display.
+
+    :type x_extent:
+        None or two-length tuple of floats
+
+    :param y_extent: [optional]
         The lower and upper range in differential abundances to display.
 
-    :type extent:
+    :type y_extent:
         two-length tuple of floats
 
     :returns:
@@ -967,20 +980,27 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
         parameter.
     """
 
-    # Get all of the unique wavelengths.
-    wavelengths = data.retrieve_column(database,
-        """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
-        WHERE element = %s AND ion = %s ORDER BY wavelength ASC""",
-        (element, ion), asarray=True)
-    wavelengths \
-        = np.unique(np.round(wavelengths, kwargs.pop("__round_wavelengths", 1)))
+    # Get the full distribution of abundances.
+    X, nodes, data_table = match_node_abundances(database, element, ion,
+        additional_columns=[parameter])
+    data_table["wavelength"] = np.round(data_table["wavelength"],
+        kwargs.pop("__round_wavelengths", 1))
+    differential_abundances, indices = calculate_differential_abundances(X)
 
-    nodes = data.retrieve_column(database,
-        """SELECT DISTINCT ON (node) node FROM line_abundances
-        WHERE element = %s AND ion = %s ORDER BY node ASC""", (element, ion))
+    # Only include abundances for which there are differential measurements.
+    nodes = sorted(set(data_table["node"]))
+    wavelengths = [w for w in sorted(set(data_table["wavelength"])) if np.any( \
+        np.isfinite(differential_abundances[data_table["wavelength"] == w]))]
+    N_nodes, N_wavelengths = len(nodes), len(wavelengths)
+
+    N_original_wavelengths = len(set(data_table["wavelength"]))
+    if N_original_wavelengths > N_wavelengths:
+        logger.warn("{0} wavelengths not shown because there are no "\
+            "differential measurements".format(
+                N_original_wavelengths - N_wavelengths))
 
     # Create a figure of the right dimensions.
-    Nx, Ny = 1 + len(nodes), wavelengths.size
+    Nx, Ny = 1 + N_nodes, N_wavelengths
     xscale, yscale, escale = (4, 2, 2)
     xspace, yspace = (0.05, 0.1)
     lb, tr = (0.5, 0.2)
@@ -998,18 +1018,14 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
         top=(tr * escale + ys)/ydim,
         wspace=xspace, hspace=yspace)
 
-    # Get the full distribution of abundances.
-    X, nodes, data_table = match_node_abundances(database, element, ion,
-        additional_columns=[parameter])
-    differential_abundances, indices = calculate_differential_abundances(X)
-
     # Get the common bin sizes.
-    x_bins = np.linspace(
+    x_min, x_max = x_extent or (
         np.floor(np.nanmin(data_table[parameter].astype(float))),
-        np.ceil(np.nanmax(data_table[parameter].astype(float))),
-        bins + 1)
+        np.ceil(np.nanmax(data_table[parameter].astype(float)))
+    )
+    x_bins = np.linspace(x_min, x_max, bins + 1)
 
-    differential_min, differential_max = extent or \
+    differential_min, differential_max = y_extent or \
         (np.nanmin(differential_abundances), np.nanmax(differential_abundances))
     y_bins = np.linspace(differential_min, differential_max, bins + 1)
 
@@ -1032,9 +1048,10 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
         full_ax, node_axes = row_axes[0], row_axes[1:] #I should switch to Py3
 
         # For the full axes we have to repeat the x-axis data.
-        x = np.tile(data_table[parameter].astype(float),
+        mask = data_table["wavelength"] == wavelength
+        x = np.tile(data_table[parameter].astype(float)[mask],
             differential_abundances.shape[1])
-        y = differential_abundances.T.flatten()
+        y = differential_abundances[mask, :].T.flatten()
 
         H, xe, ye = np.histogram2d(x, y, **histogram_kwds)
         Z = np.log(1 + H.T) if logarithmic else H.T
@@ -1061,9 +1078,9 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
             # Get all the differential abundances for this node.
             # Recall Nx = 1 + len(nodes) t.f. len(nodes) - 1 = Nx - 2
             # Ned the node_y abundances to be log_x(NODE A) - log_x(ALL OTHERS)
-            node_x = np.tile(data_table[parameter].astype(float), Nx - 2)
+            node_x = np.tile(data_table[parameter].astype(float)[mask], Nx - 2)
             node_y = np.hstack([
-                [-1, +1][j == idx[0]] * differential_abundances[:, k] \
+                [+1, -1][j == idx[0]] * differential_abundances[mask, k] \
                 for k, idx in enumerate(indices) if j in idx])
 
             H, xe, ye = np.histogram2d(node_x, node_y, **histogram_kwds)
@@ -1089,7 +1106,7 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
         ax.yaxis.set_major_locator(MaxNLocator(5))
             
 
-    raise a
+    return fig
 
 
 
@@ -1646,8 +1663,11 @@ if __name__ == "__main__":
     import psycopg2 as pg
     db = pg.connect(dbname="arc")
 
-    fig = differential_line_abundances_wrt_x(db, "Si", 1, "logg")
-    fig.savefig('figures/tmp.png')
+    #fig = differential_line_abundances_wrt_x(db, "Si", 2, "logg")
+    #fig.savefig('figures/tmp.png')
+    fig = differential_line_abundances_wrt_x(db, "Si", 1, "teff",
+        x_extent=(3500, 7000))
+    fig.savefig('figures/tmp2.png')
     raise a
 
     fig = compare_solar(db, "Si", 2)
