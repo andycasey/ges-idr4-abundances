@@ -3,8 +3,8 @@
 """ Load the Gaia-ESO Survey iDR4 node abundances. """
 
 import logging
-import numpy as np
 from collections import Counter
+from numpy import array
 from time import time
 
 import psycopg2 as pg
@@ -69,7 +69,8 @@ def retrieve(database, query, values=None, full_output=False, **kwargs):
     names, results, cursor = execute(database, query, values,
         fetch=True, **kwargs)
     return (names, results, cursor.rowcount) if full_output else results
-    
+
+
 def execute(database, query, values=None, fetch=False, **kwargs):
     """
     Execute some SQL from the database.
@@ -199,4 +200,4 @@ def retrieve_column(database, query, values=None, asarray=False):
     """
 
     rows = retrieve(database, query, values)
-    return rows if not asarray else np.array(rows).flatten()
+    return rows if not asarray else array(rows).flatten()

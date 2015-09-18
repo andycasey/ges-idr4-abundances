@@ -145,6 +145,8 @@ def update_line_abundance_flag(database, flag_ids, where, values=None):
         flag_ids = int(flag_ids)
     except (TypeError, ValueError):
         flag_ids = map(int, flag_ids)
+    else:
+        flag_ids = [flag_ids]
     
     # Check that all flag IDs actually exist.
     exists = { flag_id: flag_exists(database, flag_id) for flag_id in flag_ids }
@@ -154,7 +156,6 @@ def update_line_abundance_flag(database, flag_ids, where, values=None):
 
     query_values = [set_bitmask(flag_ids)]
     if values is not None: query_values.append(values)
-    return data.update(database, "UPDATE line_abundances SET flags = %s WHERE"\ 
-        + where, query_values) # Naughty!
-
-
+    return data.update(database, 
+        "UPDATE line_abundances SET flags = %s FROM node_results WHERE "+ where,
+        query_values) # Naughty! #TODO
