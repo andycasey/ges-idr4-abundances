@@ -1,6 +1,7 @@
-#!/usr/bin/python
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-""" Load the Gaia-ESO Survey iDR4 node abundances. """
+""" Convenience functions to manage database transactions. """
 
 import logging
 from collections import Counter

@@ -10,40 +10,6 @@ __author__ = "Andy Casey <arc@ast.cam.ac.uk>"
 import numpy as np
 
 
-def set_bitmask(integers):
-    """
-    Create a single-value bitmask for the given integers.
-
-    :param integers:
-        A list of positive integers.
-
-    :type integers:
-        list of int
-    """
-
-    integers = np.unique(np.array(integers, dtype=int))
-    if np.any(0 >= integers):
-        raise ValueError("integers must be positive values")
-        
-    bitmask = sum(2**integers)
-    if 0 > bitmask:
-        raise ValueError("negative bit mask")
-    return bitmask
-
-def unset_bitmask(bitmask):
-    """
-    Unpack a single-value bitmask.
-
-    :param bitmask:
-        The bitmask value.
-
-    :type bitmask:
-        int
-    """
-
-    return [i for i in range(1, 1 + int(np.log2(bitmask))) if bitmask >> i & 1]
-
-
 def solar_abundance(elements):
     """
     Return the Asplund 2009 solar abundance for the given element(s).

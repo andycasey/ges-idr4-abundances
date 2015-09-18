@@ -1,4 +1,5 @@
-#!/usr/bin/python
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """ Flags for line abundances. """
 
@@ -24,7 +25,7 @@ def set_bitmask(integers):
     
     bitmask = sum([2**i for i in map(int, set(integers))])
     if 0 > bitmask:
-        raise ValueError("negative bit mask")
+        raise ValueError("negative bit mask, likely due to too many high flags")
     return bitmask
 
 
