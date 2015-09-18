@@ -13,10 +13,11 @@ from scipy.stats import percentileofscore as score
 import numpy as np
 from astropy.table import Table
 
+import data
 import utils
 
 
-def calculate_differential_abundances(X, full_output=False):
+def calculate_differential_abundances(X, full_output=True):
     N_entries, N_nodes = X.shape
     assert 30 > N_nodes, "Are you sure you gave X the right way around?"
     combinations = list(itertools.combinations(range(N_nodes), 2))
@@ -29,14 +30,24 @@ def calculate_differential_abundances(X, full_output=False):
 
 
 
-def match_node_abundances(database, element, ion, **kwargs):
+def match_node_abundances(database, element, ion, additional_columns=None,
+    **kwargs):
     """
     Return an array of matched-abundances.
     """
 
-    data = retrieve_table(database,
-        """SELECT * FROM line_abundances WHERE element = %s AND ion = %s
-        ORDER BY node ASC""", (element, ion))
+    if additional_columns is None: 
+        data = retrieve_table(database,
+            """SELECT * FROM line_abundances WHERE element = %s AND ion = %s
+            ORDER BY node ASC""", (element, ion))
+    else:
+        # Match each star to the first distinct entry in the node_results table
+        data = retrieve_table(database,
+            """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
+                cname, """ + ", ".join(additional_columns) + """ FROM node_results ORDER BY cname) n 
+                ON (l.element = %s AND l.ion = %s AND l.cname = n.cname)""",
+                (element, ion)) # TODO NAUGHTY
+
     data["wavelength"] \
         = np.round(data["wavelength"], kwargs.pop("__round_wavelengths", 1))
 
@@ -907,6 +918,156 @@ def individual_line_abundance_differences(database, element, ion, node,
 
     return fig
 
+
+def differential_line_abundances_wrt_x(database, element, ion, parameter,
+    bins=50, extent=(-0.5, 0.5), **kwargs):
+    """
+    Show the node differential line abundances for a given element and ion with
+    respect to a given column in the node results or line abundances tables.
+
+    :param database:
+        A PostgreSQL database connection.
+
+    :type database:
+        :class:`~psycopg2.connection`
+
+    :param element:
+        The elemental abundance of interest.
+
+    :type element:
+        str
+
+    :param ion:
+        The ionisation stage of the element of interest (1 = neutral).
+
+    :type ion:
+        int
+
+    :param parameter:
+        The x-axis parameter to display differential abundances against.
+
+    :type parameter:
+        str
+
+    :param bins: [optional]
+        The number of bins to have in the differential abundances axes. The
+        default bin number is 50.
+
+    :type bins:
+        int
+
+    :param extent: [optional]
+        The lower and upper range in differential abundances to display.
+
+    :type extent:
+        two-length tuple of floats
+
+    :returns:
+        A figure showing the differential line abundances against the requested
+        parameter.
+    """
+
+    # Get all of the unique wavelengths.
+    wavelengths = data.retrieve_column(database,
+        """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
+        WHERE element = %s AND ion = %s ORDER BY wavelength ASC""",
+        (element, ion), asarray=True)
+    wavelengths \
+        = np.unique(np.round(wavelengths, kwargs.pop("__round_wavelengths", 1)))
+
+    nodes = data.retrieve_column(database,
+        """SELECT DISTINCT ON (node) node FROM line_abundances
+        WHERE element = %s AND ion = %s ORDER BY node ASC""", (element, ion))
+
+    # Create a figure of the right dimensions.
+    Nx, Ny = 1 + len(nodes), wavelengths.size
+    xscale, yscale = (4, 2)
+    xspace, yspace = (0.3, 0.2)
+    lb, tr = (0.5, 0.2)
+    xs = xscale * Nx + xscale * (Nx - 1) * xspace
+    ys = yscale * Ny + yscale * (Ny - 1) * yspace
+
+    xdim = lb * xscale + xs + tr * xscale
+    ydim = lb * yscale + ys + tr * yscale
+
+    fig, axes = plt.subplots(Ny, Nx, figsize=(xdim, ydim))
+    fig.subplots_adjust(
+        left=(lb * xscale)/xdim,
+        right=(lb * xscale + xs)/xdim,
+        bottom=(tr * yscale)/ydim,
+        top=(tr * yscale + ys)/ydim,
+        wspace=xspace, hspace=yspace)
+
+    # Get the full distribution of abundances.
+    X, nodes, data_table = match_node_abundances(database, element, ion,
+        additional_columns=[parameter])
+    differential_abundances, indices = calculate_differential_abundances(X)
+
+    # Get the common bin sizes.
+    x_bins = np.linspace(
+        np.floor(np.nanmin(data_table[parameter].astype(float))),
+        np.ceil(np.nanmax(data_table[parameter].astype(float))),
+        bins + 1)
+
+    differential_min, differential_max = extent or \
+        (np.nanmin(differential_abundances), np.nanmax(differential_abundances))
+    y_bins = np.linspace(differential_min, differential_max, bins + 1)
+
+
+
+    # Get common boundaries for the x- and y-axis.
+
+    for i, (row_axes, wavelength) in enumerate(zip(axes, wavelengths)):
+
+        # First one should contain *everything* in a greyscale.
+        full_axes, node_axes = row_axes[0], row_axes[1:] #I should switch to Py3
+
+
+        # For the full axes we have to repeat the x-axis data.
+        x = np.tile(data_table[parameter].astype(float),
+            differential_abundances.shape[1])
+        y = differential_abundances.T.flatten()
+
+        H, xe, ye = np.histogram2d(x, y, bins=(x_bins, y_bins), normed=True)
+        f = full_axes.imshow(H, interpolation="nearest", cmap=inferno)
+        cbar = plt.colorbar(f)
+
+        # Make the node-specific histogram plots.
+        for j, (ax, node) in enumerate(zip(node_axes, nodes)):
+
+            # Get all the differential abundances for this node.
+            # Recall Nx = 1 + len(nodes) t.f. len(nodes) - 1 = Nx - 2
+            node_x = np.tile(data_table[parameter].astype(float), Nx - 2)
+            node_y = np.hstack([differential_abundances[:, k] for k, idx \
+                in enumerate(indices) if j in idx])
+
+            H, xe, ye = np.histogram2d(node_x, node_y, bins=(x_bins, y_bins),
+                normed=True)
+
+            bar = ax.imshow(H, interpolation="nearest", cmap=inferno)
+
+
+        raise a
+
+
+
+
+        raise a
+
+
+        # Every other one should be node-specific.
+
+
+        # Bin the differential abundances.
+
+
+
+
+    raise a
+
+
+
+
 def differential_line_abundances(database, element, ion, bins=50, 
     absolute_extent=None, differential_extent=(-0.5, 0.5), **kwargs):
     """
@@ -1034,7 +1195,8 @@ def differential_line_abundances(database, element, ion, bins=50,
 
         # Show the distribution of differential abundances for this wavelength.
         match = diff_data["wavelength"] == wavelength
-        X_diff_wavelength = calculate_differential_abundances(X[match]).flatten()
+        X_diff_wavelength = calculate_differential_abundances(X[match],
+            full_output=False).flatten()
         if np.isfinite(X_diff_wavelength).sum() > 0:
             ax.hist(X_diff_wavelength, color=comp_distribution_color, **hist_kwds)
 
@@ -1069,7 +1231,8 @@ def differential_line_abundances(database, element, ion, bins=50,
 
         # Show the distribution of differential abundances for each node.
         match = diff_data["wavelength"] == wavelength
-        X_diff_wavelength = calculate_differential_abundances(X[match])
+        X_diff_wavelength = calculate_differential_abundances(X[match],
+            full_output=False)
 
         if np.any(np.isfinite(X_diff_wavelength)):
             ax.hist(X_diff_wavelength.flatten(), color=full_distribution_color, **hist_kwds)
@@ -1443,6 +1606,7 @@ def percentiles(database, element, ion, bins=20, **kwargs):
 
 
 
+
 if __name__ == "__main__":
 
 
@@ -1456,11 +1620,14 @@ if __name__ == "__main__":
     import psycopg2 as pg
     db = pg.connect(dbname="arc")
 
+    fig = differential_line_abundances_wrt_x(db, "Si", 2, "logg")
+    raise a
+
     fig = compare_solar(db, "Si", 2)
     fig2 = compare_m67_twin(db, "Si", 2)
     fig.savefig("figures/SI2/compare-solar.png")
     fig2.savefig("figures/SI2/compare-m67-1194.png")
-    
+
     raise a
     #tellurics(db)#, "Si", 1)
     #percentiles(db, "Si", 1)
