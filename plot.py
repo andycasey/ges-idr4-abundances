@@ -920,7 +920,7 @@ def individual_line_abundance_differences(database, element, ion, node,
 
 
 def differential_line_abundances_wrt_x(database, element, ion, parameter,
-    bins=50, extent=(-0.5, 0.5), **kwargs):
+    logarithmic=True, bins=25, extent=(-0.5, 0.5), **kwargs):
     """
     Show the node differential line abundances for a given element and ion with
     respect to a given column in the node results or line abundances tables.
@@ -981,21 +981,21 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
 
     # Create a figure of the right dimensions.
     Nx, Ny = 1 + len(nodes), wavelengths.size
-    xscale, yscale = (4, 2)
-    xspace, yspace = (0.3, 0.2)
+    xscale, yscale, escale = (4, 2, 2)
+    xspace, yspace = (0.05, 0.1)
     lb, tr = (0.5, 0.2)
     xs = xscale * Nx + xscale * (Nx - 1) * xspace
     ys = yscale * Ny + yscale * (Ny - 1) * yspace
 
-    xdim = lb * xscale + xs + tr * xscale
-    ydim = lb * yscale + ys + tr * yscale
+    xdim = lb * escale + xs + tr * escale
+    ydim = lb * escale + ys + tr * escale 
 
     fig, axes = plt.subplots(Ny, Nx, figsize=(xdim, ydim))
     fig.subplots_adjust(
-        left=(lb * xscale)/xdim,
-        right=(lb * xscale + xs)/xdim,
-        bottom=(tr * yscale)/ydim,
-        top=(tr * yscale + ys)/ydim,
+        left=(lb * escale)/xdim,
+        right=(tr * escale + xs)/xdim,
+        bottom=(lb * escale)/ydim,
+        top=(tr * escale + ys)/ydim,
         wspace=xspace, hspace=yspace)
 
     # Get the full distribution of abundances.
@@ -1013,55 +1013,81 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
         (np.nanmin(differential_abundances), np.nanmax(differential_abundances))
     y_bins = np.linspace(differential_min, differential_max, bins + 1)
 
-
-
     # Get common boundaries for the x- and y-axis.
+    histogram_kwds = {
+        "normed": kwargs.pop("normed", False),
+        "bins": (x_bins, y_bins)
+    }
+    imshow_kwds = {
+        "interpolation": "nearest",
+        "aspect": "auto",
+        "cmap": plasma,
+        "extent": (x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]),
+    }
+    imshow_kwds.update(kwargs)
 
     for i, (row_axes, wavelength) in enumerate(zip(axes, wavelengths)):
 
         # First one should contain *everything* in a greyscale.
-        full_axes, node_axes = row_axes[0], row_axes[1:] #I should switch to Py3
-
+        full_ax, node_axes = row_axes[0], row_axes[1:] #I should switch to Py3
 
         # For the full axes we have to repeat the x-axis data.
         x = np.tile(data_table[parameter].astype(float),
             differential_abundances.shape[1])
         y = differential_abundances.T.flatten()
 
-        H, xe, ye = np.histogram2d(x, y, bins=(x_bins, y_bins), normed=True)
-        f = full_axes.imshow(H, interpolation="nearest", cmap=inferno)
-        cbar = plt.colorbar(f)
+        H, xe, ye = np.histogram2d(x, y, **histogram_kwds)
+        Z = np.log(1 + H.T) if logarithmic else H.T
+        full_ax.imshow(Z, **imshow_kwds)
+        
+        # Bells and whistles
+        _ = "{0}\,{1}".format(element, ion)
+        full_ax.set_ylabel(
+            r"$\Delta\log_{\epsilon}({\rm " + _ + "})$")
+        if full_ax.is_first_row():
+            full_ax.set_title("All nodes")
+        if full_ax.is_last_row():
+            full_ax.set_xlabel(parameter)
+        else:
+            full_ax.set_xticklabels([])
+
+        full_ax.text(0.05, 0.95, r"${0}$ $\AA$".format(wavelength),
+            transform=full_ax.transAxes, color="w", fontsize=14,
+            verticalalignment="top", horizontalalignment="left")
 
         # Make the node-specific histogram plots.
         for j, (ax, node) in enumerate(zip(node_axes, nodes)):
 
             # Get all the differential abundances for this node.
             # Recall Nx = 1 + len(nodes) t.f. len(nodes) - 1 = Nx - 2
+            # Ned the node_y abundances to be log_x(NODE A) - log_x(ALL OTHERS)
             node_x = np.tile(data_table[parameter].astype(float), Nx - 2)
-            node_y = np.hstack([differential_abundances[:, k] for k, idx \
-                in enumerate(indices) if j in idx])
+            node_y = np.hstack([
+                [-1, +1][j == idx[0]] * differential_abundances[:, k] \
+                for k, idx in enumerate(indices) if j in idx])
 
-            H, xe, ye = np.histogram2d(node_x, node_y, bins=(x_bins, y_bins),
-                normed=True)
+            H, xe, ye = np.histogram2d(node_x, node_y, **histogram_kwds)
+            Z = np.log(1 + H.T) if logarithmic else H.T
+            image = ax.imshow(Z, **imshow_kwds)
 
-            bar = ax.imshow(H, interpolation="nearest", cmap=inferno)
+            # Some formatting:
+            ax.set_yticklabels([])
+            if ax.is_first_row():
+                ax.set_title(node.strip())
 
+            if ax.is_last_row():
+                ax.set_xlabel(parameter)
+            else:
+                ax.set_xticklabels([])
 
-        raise a
-
-
-
-
-        raise a
-
-
-        # Every other one should be node-specific.
-
-
-        # Bin the differential abundances.
-
+        # Add a zero-differential marker for all lines.
+        [ax.axhline(0, c="k", lw=1) for ax in row_axes]
 
 
+    for ax in axes.flatten():
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+            
 
     raise a
 
@@ -1620,7 +1646,8 @@ if __name__ == "__main__":
     import psycopg2 as pg
     db = pg.connect(dbname="arc")
 
-    fig = differential_line_abundances_wrt_x(db, "Si", 2, "logg")
+    fig = differential_line_abundances_wrt_x(db, "Si", 1, "logg")
+    fig.savefig('figures/tmp.png')
     raise a
 
     fig = compare_solar(db, "Si", 2)
