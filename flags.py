@@ -42,7 +42,6 @@ def unset_bitmask(bitmask):
     return [i for i in range(1, 1 + int(np.log2(bitmask))) if bitmask >> i & 1]
 
 
-
 def create_line_abundance_flag(database, description):
     """
     Add a new line abundance flag description to the database.
@@ -142,28 +141,20 @@ def update_line_abundance_flag(database, flag_ids, where, values=None):
         int or iterable of ints
     """
 
-
-    # If flag_ids is an int, check it is OK.
     try:
         flag_ids = int(flag_ids)
     except (TypeError, ValueError):
         flag_ids = map(int, flag_ids)
     
     # Check that all flag IDs actually exist.
-    if not all(flag_exists(database, flag_id) for flag_id in flag_ids):
-        raise ValueError("one of the flags given does not exist")
+    exists = { flag_id: flag_exists(database, flag_id) for flag_id in flag_ids }
+    if not all(exists.values()):
+        raise ValueError("the following flag ids provided do not exist: {0}"\
+            .format(", ".join([str(k) for k, v in exists.items() if not v])))
 
     query_values = [set_bitmask(flag_ids)]
-    if values is not None: query_values += list(values)
-    rowcount = data.update(database, """UPDATE line_abundances SET flags = %s
-        WHERE %s""", query_values)
-
-    assert len(line_abundance_ids) >= rowcount 
-    if len(line_abundance_ids) != rowcount:
-        logger.warn("Number of rows affected by update_line_abundance_flag did"\
-            " not match the number of given ids ({0} != {1})".format(rowcount,
-                len(line_abundance_ids)))
-
-    return rowcount
+    if values is not None: query_values.append(values)
+    return data.update(database, "UPDATE line_abundances SET flags = %s WHERE"\ 
+        + where, query_values) # Naughty!
 
 

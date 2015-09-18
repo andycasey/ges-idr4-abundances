@@ -362,8 +362,9 @@ if __name__ == "__main__":
         assert flags.flag_exists(database, int(k))
 
 
-    flags.update_line_abundance_flag(database, (1, 2, 3), [1, 2, 3])
+    flags.update_line_abundance_flag(database, [1, 2, 3], "id IN %s", (1, 2, 3, 4))
     
+
     raise a
 
     # It should always be that we do the following:

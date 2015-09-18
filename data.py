@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.DEBUG,
 logger = logging.getLogger("ges")
 
 
-def update(database, query, values=None, **kwargs):
+def update(database, query, values=None, full_output=False, **kwargs):
     """
     Update the database with a SQL query.
 
@@ -40,7 +40,7 @@ def update(database, query, values=None, **kwargs):
     """
 
     names, results, cursor = execute(database, query, values, **kwargs)
-    return cursor.rownumber
+    return (names, results, cursor) if full_output else cursor.rowcount
     
 
 def retrieve(database, query, values=None, full_output=False, **kwargs):
@@ -68,11 +68,8 @@ def retrieve(database, query, values=None, full_output=False, **kwargs):
 
     names, results, cursor = execute(database, query, values,
         fetch=True, **kwargs)
-    if not full_output:
-        return (names, results, cursor.rowcount)
-    return results
-
-
+    return (names, results, cursor.rowcount) if full_output else results
+    
 def execute(database, query, values=None, fetch=False, **kwargs):
     """
     Execute some SQL from the database.
@@ -109,10 +106,16 @@ def execute(database, query, values=None, fetch=False, **kwargs):
         raise
     
     else:
-        logger.info("Took {0:.0f} ms for SQL query {1}".format(
-            1e3 * (time() - t_init), " ".join((query % values).split())))
+        taken = 1e3 * (time() - t_init)
+        try:
+            logger.info("Took {0:.0f} ms for SQL query {1}".format(taken,
+                " ".join((query % values).split())))
+        except TypeError:
+            logger.info("Took {0:.0f} ms for SQL query {1} with values {2}"\
+                .format(taken, query, values))
 
-    names = tuple([column[0] for column in cursor.description])
+    names = None if cursor.description is None \
+        else tuple([column[0] for column in cursor.description])
     return (names, results, cursor)
 
 

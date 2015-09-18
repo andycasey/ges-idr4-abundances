@@ -645,17 +645,17 @@ if __name__ == "__main__":
     files = glob("data/*/*.dat")
 
 
-    #cursor = connection.cursor()
-    #for filename in files:
-    #    print(filename)
-    #    line_abundances = parse_line_abundances(filename)
-    #    if len(line_abundances) == 0: continue
+    cursor = connection.cursor()
+    for filename in files:
+        print(filename)
+        line_abundances = parse_line_abundances(filename)
+        if len(line_abundances) == 0: continue
 
-    #    k = line_abundances[0].keys()
-    #    cursor.executemany("""INSERT INTO line_abundances({0}) VALUES ({1})"""\
-    #        .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
-    #        line_abundances)
-    #cursor.close()
+        k = line_abundances[0].keys()
+        cursor.executemany("""INSERT INTO line_abundances({0}) VALUES ({1})"""\
+            .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
+            line_abundances)
+    cursor.close()
     
     cursor = connection.cursor()
     from astropy.io import fits
