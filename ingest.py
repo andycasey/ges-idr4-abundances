@@ -59,11 +59,20 @@ def parse_line_abundances(filename):
                 elif "CODE" in line:
                     _ = ["CODE", "CODES"]["CODES" in line]    
                     metadata["code"] = line.split(_)[1].strip()
-                    
+                
+                elif "Code" in line:
+                    # ULB
+                    metadata["code"] = line[6:]
+
+
                 elif "OBJECT" in line:
                     metadata["object"] = line.split("OBJECT")[1].strip()
 
+            elif line.startswith("LAMBDA"):
+                continue
+
             else:
+
                 assert len(metadata) == 6
 
                 # Split up the row.
@@ -130,6 +139,23 @@ def parse_line_abundances(filename):
                         "measurement_type": measurement_type.strip()
                     })
 
+                elif metadata["node"] == "ULB":
+                    _, element, ion, ew, e_ew, upper_ew, abundance, e_abundance,\
+                        upper_abundance, measurement_type = line.split()
+
+                    row.update({
+                        "wavelength": wavelength,
+                        "element": element,
+                        "ion": int(ion),
+                        "ew": safe_float(ew),
+                        "e_ew": safe_float(ew),
+                        "upper_ew": safe_int(upper_ew),
+                        "abundance": safe_float(abundance),
+                        "e_abundance": safe_float(e_abundance),
+                        "upper_abundance": safe_int(upper_abundance),
+                        "measurement_type": measurement_type.strip()
+                    })
+
                 else:
                     raise WTFError
 
@@ -160,13 +186,13 @@ def create_tables(connection):
         ion integer not null,
         ew real,
         e_ew real,
-        upper_ew int,
+        upper_ew int, 
         abundance real,
         e_abundance real,
         upper_abundance int,
         measurement_type char(2) not null,
         cname char(16) not null,
-        code char(30) not null,
+        code char(40) not null,
         object char(21) not null,
         abundance_filename char(140) not null,
         spectrum_filename_stub char(140) not null,
@@ -656,6 +682,7 @@ if __name__ == "__main__":
             .format(", ".join(k), ", ".join(["%({})s".format(_) for _ in k])),
             line_abundances)
     cursor.close()
+    connection.commit()
     
     cursor = connection.cursor()
     from astropy.io import fits
