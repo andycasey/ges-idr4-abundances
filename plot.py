@@ -617,7 +617,7 @@ def transition_covariance(database, element, ion, node=None, column="abundance",
 
 
 def corner_scatter(data, labels=None, uncertainties=None, extent=None,
-    color=None, bins=20):
+    color=None, bins=20, relevant_text=None):
     """
     Create a corner scatter plot showing the differences between each node.
 
@@ -655,8 +655,7 @@ def corner_scatter(data, labels=None, uncertainties=None, extent=None,
         "histtype": "step"
     }
 
-    if extent is None:
-        extent = (0.9 * np.nanmin(data), 1.1 * np.nanmax(data))
+    extent = extent or (0.9 * np.nanmin(data), 1.1 * np.nanmax(data))
     
     # Match all of the nodes
     for i in range(N):
@@ -665,8 +664,14 @@ def corner_scatter(data, labels=None, uncertainties=None, extent=None,
             if j > i: # hide.
                 try:
                     ax = axes[i, j]
-                    ax.set_visible(False)
                     ax.set_frame_on(False)
+                    if ax.is_last_col() and ax.is_first_row() and relevant_text:
+                        ax.text(0.95, 0.95, relevant_text, fontsize=14,
+                            verticalalignment="top", horizontalalignment="right")
+                        [_([]) for _ in (ax.set_xticks, ax.set_yticks)]
+                    else:
+                        ax.set_visible(False)
+                    
                 except IndexError:
                     None
                 continue
@@ -1648,6 +1653,75 @@ def percentiles(database, element, ion, bins=20, **kwargs):
     return fig
 
 
+def all_node_abundance_correlations(database, element, ion, **kwargs):
+
+    kwds = kwargs.copy()
+    nodes = data.retrieve_column(database,
+        """SELECT DISTINCT ON (node) node FROM line_abundances
+        WHERE element = %s AND ion = %s""", (element, ion), asarray=True)
+
+    return { n: node_abundance_correlations(database, element, ion, n, **kwds) \
+        for n in nodes }
+
+
+def node_abundance_correlations(database, element, ion, node, **kwargs):
+    """
+    Show a corner plot demonstrating the correlations between line abundances
+    for all different stars.
+    """
+
+    # Get all the data from this node for this element and ion
+    measurements = data.retrieve_table(database,
+        """SELECT * FROM line_abundances WHERE element = %s AND ion = %s AND
+        node = %s ORDER BY wavelength ASC""", (element, ion, node))
+
+    # Round wavelengths as necessary, then group by spectrum_filename_stub.
+    measurements["wavelength"] = np.round(measurements["wavelength"],
+        kwargs.pop("__round_wavelengths", 1))
+    measurements = measurements.group_by(["spectrum_filename_stub"])
+    unique_wavelengths = sorted(set(measurements["wavelength"]))
+
+    # Build the matrix.
+    X = np.nan * np.ones((len(unique_wavelengths), len(measurements.groups)))
+    for j, group in enumerate(measurements.groups):
+        mu = np.nanmean(group["abundance"])
+        for row in group:
+            i = unique_wavelengths.index(row["wavelength"])
+            X[i, j] = row["abundance"] - mu
+
+    return corner_scatter(X, labels=unique_wavelengths, **kwargs)
+
+
+
+def line_abundance_correlations(database, element, ion, wavelength, tol=0.1,
+    ignore_gaps=True, additional_text=None, **kwargs):
+    """
+    Show the node-to-node correlations for an abundance of a given line.
+    """
+
+    # Data.
+    measurements = data.retrieve_table(database,
+        """SELECT * FROM line_abundances WHERE element = %s AND ion = %s AND
+        wavelength >= %s AND wavelength <= %s AND abundance < 9""",
+        (element, ion, wavelength - tol, wavelength + tol))
+    measurements = measurements.group_by(["spectrum_filename_stub"])
+
+    nodes = sorted(set(measurements["node"]))
+    
+    # Build the matrix.
+    X = np.nan * np.ones((len(nodes), len(measurements.groups)))
+    for j, group in enumerate(measurements.groups):
+        mu = 0#np.mean(group["abundance"])
+        if ignore_gaps and (len(group) != len(nodes) or not np.isfinite(mu)):
+            continue
+
+        for row in group:
+            i = nodes.index(row["node"])
+            X[i, j] = row["abundance"] - mu
+
+    raise a
+    text = "\n".join([str(wavelength), (additional_text or "")])
+    return corner_scatter(X, labels=nodes, relevant_text=text, **kwargs)
 
 
 if __name__ == "__main__":
@@ -1659,9 +1733,31 @@ if __name__ == "__main__":
     d = load_node("data/GES_iDR4_WG11_MyGIsFOS.fits")
     f = mean_abundances_against_stellar_parameters(d, "SI1")
     """
+    import os
+    kwds = {
+        "host": "/tmp/",
+        "dbname": "arc",
+        "user": "arc",
+        "password": os.environ.get('PSQL_PW', None)
+    }
+
 
     import psycopg2 as pg
-    db = pg.connect(dbname="arc")
+    db = pg.connect(**kwds)
+
+
+    raise a
+    """
+    figures = all_node_abundance_correlations(db, "Si", 2,
+        extent=(-1, 1))
+    for node, fig in figures.items():
+        fig.savefig("tmp-{}.png".format(node))
+    """
+
+    fig = line_abundance_correlations(db, "Si", 2, 6371.3, ignore_gaps=True)
+    fig.savefig("tmp2.png")
+
+    raise a
 
     #fig = differential_line_abundances_wrt_x(db, "Si", 2, "logg")
     #fig.savefig('figures/tmp.png')
