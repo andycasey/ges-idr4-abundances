@@ -139,7 +139,7 @@ def parse_line_abundances(filename):
                         "measurement_type": measurement_type.strip()
                     })
 
-                elif metadata["node"] == "ULB":
+                elif metadata["node"] in ("ULB", "CAUP"):
                     _, element, ion, ew, e_ew, upper_ew, abundance, e_abundance,\
                         upper_abundance, measurement_type = line.split()
 
@@ -663,7 +663,14 @@ if __name__ == "__main__":
     from astropy.io import fits
     from glob import glob
 
-    connection = pg.connect(dbname="arc")
+    kwds = {
+        "host": "/tmp/",
+        "dbname": "arc",
+        "user": "arc",
+        "password": os.environ.get('PSQL_PW', None)
+    }
+
+    connection = pg.connect(**kwds)
     create_tables(connection)
     connection.commit()
 
