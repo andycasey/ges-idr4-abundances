@@ -145,7 +145,27 @@ def update_homogenised_abundance(database, element, ion, cname,
         int
     """
 
-    raise NotImplementedError
+    # Does this record already exist? If so remove it.
+    # TODO
+    print("warning not checking for existing entries")
+
+    return data.retrieve(database, """INSERT INTO homogenised_abundances
+        (cname, spectrum_filename_stub, element, ion, abundance,
+        e_abundance, upper_abundance, num_lines, num_measurements)
+        VALUES (%(cname)s, %(spectrum_filename_stub)s,
+        %(element)s, %(ion)s, %(abundance)s, %(e_abundance)s,
+        %(upper_abundance)s, %(num_lines)s, %(num_measurements)s)
+        RETURNING id;""", {
+            "spectrum_filename_stub": spectrum_filename_stub,
+            "cname": cname,
+            "element": element,
+            "ion": ion,
+            "abundance": abundance,
+            "e_abundance": uncertainty,
+            "num_measurements": num_measurements,
+            "num_lines": num_lines,
+            "upper_abundance": 0, # TODO
+        })[0][0]
 
 
 def update_homogenised_line_abundance(database, element, ion, cname, 
@@ -397,6 +417,7 @@ def homogenise_average_abundances(database, element, ion, cname):
     """
     Average the homogenised line abundances for a given star.
     """
+    # TODO DOCO
 
     # Get the data for this star/spectrum filename stub.
     line_abundances = data.retrieve_table(database,
@@ -422,15 +443,10 @@ def homogenise_average_abundances(database, element, ion, cname):
         result = update_homogenised_abundance(database, element, ion,
             group["cname"][0], group["spectrum_filename_stub"][0],
             mu, sigma, N_lines, N_measurements)
-
-        raise a
-    raise a
-    # Calculate a mean and std.dev.
-
-    # Update this value into the homogenised_node_results table.
-
-
-    raise NotImplementedError
+    
+    # TODO: what should we return?
+    # TODO: should we average the abundances from multiple spectra?
+    return None
 
 
 def homogenise_species(database, element, ion, **kwargs):
@@ -489,26 +505,12 @@ def homogenise_species(database, element, ion, **kwargs):
     for j, cname in enumerate(cnames):
         homogenise_average_abundances(database, element, ion, cname)
 
+    database.commit()
 
-    # Now produced homogenised results from all the available lines for this
-    # species.
+    # TODO what should we return?
+    return None
 
-    # For each cname, just calculate a weighted average.
-    # Include the line-to-line covariances?
-
-
-    raise a
-
-    # Get the matched line abundances for this species so we can estimate the
-    # covariance matrix.
-
-    # species
-    # per cnames
-    # per wavelength
-
-    # Instead we should do:
-    # per wavelength (get the covariance matrix)
-    # then per cname
+    
     
 
 
