@@ -46,17 +46,54 @@ if __name__ == "__main__":
 
     absolute_extent = (5, 9)
     figures = {
+        "compare-bm": (plot.compare_benchmarks,
+            { "benchmarks_filename": "benchmarks.yaml" }),
         "compare-solar": plot.compare_solar,
         "compare-m67-1194": plot.compare_m67_twin,
         "percentile": plot.percentiles,
-        "differential-line-abundances": (plot.differential_line_abundances,
-            { "absolute_extent": absolute_extent }),
-        "x-fe-abundances": (plot.line_abundances, { "reference_column": "feh",
-            "aux_column": "teff", "aux_extent": (3500, 7500) }),
+        "differential-line-abundances": plot.differential_line_abundances,
+        "differential-line-abundances-clipped": (
+            plot.differential_line_abundances, { "absolute_extent": absolute_extent }),     
+        "line-abundances-logx-wrt-teff": (plot.line_abundances, {
+            "reference_column": "teff",
+            "aux_column": "logg",
+            "aux_extent": (3500, 7500),
+            "extent": None,
+            "show_node_comparison": False,
+            "show_line_comparison": False,
+            }),
+        "line-abundances-logx-wrt-logg": (plot.line_abundances, {
+            "reference_column": "logg",
+            "aux_column": "feh",
+            "aux_extent": (0, 5),
+            "extent": None,
+            "show_node_comparison": False,
+            "show_line_comparison": False,
+            }),
+        "line-abundances-logx-wrt-feh": (plot.line_abundances, {
+            "reference_column": "feh",
+            "aux_column": "teff",
+            "aux_extent": (-3, 1),
+            "extent": None,
+            "show_node_comparison": False,
+            "show_line_comparison": False,
+            }),
+
+        "line-abundances-xfe-wrt-teff": (plot.line_abundances, {
+            "reference_column": "teff", "aux_column": "logg",
+            "aux_extent": (0, 5) }),
+        "line-abundances-xfe-wrt-logg": (plot.line_abundances, {
+            "reference_column": "logg", "aux_column": "feh",
+            "aux_extent": (-3, 1) }),
+        "line-abundances-xfe-wrt-feh": (plot.line_abundances, {
+            "reference_column": "feh", "aux_column": "teff",
+            "aux_extent": (3500, 7000) }),
+
+
         "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
         "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
-        "abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
-        "ew-covariance": (plot.transition_covariance, {"column": "ew"}),
+        #"abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
+        #"ew-covariance": (plot.transition_covariance, {"column": "ew"}),
         "mean-abundance-sp": plot.mean_abundance_against_stellar_parameters,
         "mean-abundance-differences": (plot.mean_abundance_differences, {
             "extent": absolute_extent }),
@@ -71,8 +108,10 @@ if __name__ == "__main__":
     }
 
     species = [
-    #    ("Si", 1), # Done
-    #    ("Si", 2), # Done
+        ("Si", 1), # Done
+        ("Si", 2), # Done
+    ]
+    """
         ("Al", 1),
         ("Al", 3),
         ("Na", 1),
@@ -130,6 +169,7 @@ if __name__ == "__main__":
         ("Gd", 2),
         ("Sm", 2),
     ]
+    """
 
     database = pg.connect(dbname="arc")
 
@@ -140,6 +180,7 @@ if __name__ == "__main__":
         try:
             make_figures(figures, database, element, ion)
         except:
+            raise
             None
         plt.close("all")
 

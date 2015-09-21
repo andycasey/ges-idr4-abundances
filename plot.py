@@ -379,7 +379,7 @@ def compare_m67_twin(database, element, ion, bins=20, extent=None, **kwargs):
         AND l.cname = n.cname 
         AND n.ges_fld LIKE 'M67%' AND n.object = '1194')""".format(element, ion)) # Naughty.
 
-    return _compare_solar_like_abundances(data, element, ion, bins=bins,
+    return _compare_abundances_from_repeat_spectra(data, element, ion, bins=bins,
         extent=extent, **kwargs)
 
 
@@ -397,11 +397,13 @@ def compare_solar(database, element, ion, bins=20, extent=None, **kwargs):
         n ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
             AND l.cname LIKE 'ssssss%')""".format(element, ion)) # Naughty.
 
-    return _compare_solar_like_abundances(data, element, ion, bins=bins,
+    return _compare_abundances_from_repeat_spectra(data, element, ion, bins=bins,
         extent=extent, **kwargs)
 
 
-def _compare_solar_like_abundances(data, element, ion, bins=20, extent=None,
+
+def _compare_abundances_from_repeat_spectra(data, element, ion, reference_label,
+    reference_abundance, reference_uncertainty=None, bins=20, extent=None,
     **kwargs):
 
     # Get the unique nodes and wavelengths.
@@ -415,6 +417,9 @@ def _compare_solar_like_abundances(data, element, ion, bins=20, extent=None,
     cmap_indices = np.linspace(0, 1, N_nodes)
     bin_min, bin_max = \
         extent or (np.nanmin(data["abundance"]), np.nanmax(data["abundance"]))
+
+    if bin_min == bin_max:
+        bin_min, bin_max = bin_min - 0.5, bin_min + 0.5
 
     hist_kwds = {
         "histtype": "step",
@@ -457,14 +462,13 @@ def _compare_solar_like_abundances(data, element, ion, bins=20, extent=None,
         # Show the normalised distribution of absolute abundances from all nodes
         ok = (data["wavelength"] == wavelength) * np.isfinite(data["abundance"])
         if ok.sum() > 0:
-            ax_hist.hist(data["abundance"][ok], color="k", **hist_kwds)
+            ax_hist.hist(np.array(data["abundance"][ok]), color="k", **hist_kwds)
         ax_hist.plot([], [], color="k", label="All nodes")
         ax_hist.set_title(wavelength)
 
         # For each node, show the histogram of absolute abundances.
         for j, node in enumerate(nodes):
             node_match = ok * (data["node"] == node)
-            print(node, data["abundance"][node_match])
             if np.any(np.isfinite(data["abundance"][node_match])):
                 ax_hist.hist(data["abundance"][node_match],
                     color=cmap(cmap_indices[j]), **hist_kwds)
@@ -482,6 +486,7 @@ def _compare_solar_like_abundances(data, element, ion, bins=20, extent=None,
                 ecolor="k", aa=True, fmt=None, mec="k", mfc="w", ms=6, zorder=1)
             ax_snr.scatter(x, y, facecolor=c, **scatter_kwds)
 
+
             # Show some mean + std.dev range.
             mean, sigma = np.nanmean(y), np.nanstd(y)
             ax_snr.axhline(mean, c=c, **hline_kwds)
@@ -490,10 +495,6 @@ def _compare_solar_like_abundances(data, element, ion, bins=20, extent=None,
                     **span_kwds)
 
             ax_snr.set_ylim(ax_hist.get_xlim())
-            if sigma == 0:
-                ax_snr.set_xlim(-10 + np.mean(x), np.mean(x) + 10)
-            else:
-                ax_snr.set_xlim(max([0, ax_snr.get_xlim()[0]]), ax_snr.get_xlim()[1])
 
         ax_hist.xaxis.set_major_locator(MaxNLocator(5))
         ax_hist.yaxis.set_major_locator(MaxNLocator(5))
@@ -518,10 +519,18 @@ def _compare_solar_like_abundances(data, element, ion, bins=20, extent=None,
         ax_snr.yaxis.set_major_locator(MaxNLocator(5))
 
         # Show the solar abundance.
-        ax_snr.axhline(utils.solar_abundance(element), c="k", lw=3,
-            label="Solar", zorder=1)
+        ax_snr.axhline(reference_abundance, c="k", lw=3, label=reference_label,
+            zorder=1)
+        if reference_uncertainty is not None:
+            ax_snr.axhspan(-reference_uncertainty, +reference_uncertainty,
+                facecolor="#666666", alpha=0.5, zorder=-100,
+                edgecolor="#666666")
         if ax_snr.is_first_row():
             ax_snr.legend(loc="upper right", frameon=False, fontsize=12)
+
+    # Set S/N axes on the same x-scale.
+    xlims = np.array([ax.get_xlim() for ax in axes[:, 1]])
+    [ax.set_xlim(xlims[:, 0].min(), xlims[:,1].max()) for ax in axes[:, 1]]
 
     return fig
 
@@ -1185,6 +1194,11 @@ def differential_line_abundances(database, element, ion, bins=50,
     bin_min, bin_max = absolute_extent \
         or (data["abundance"].min(), data["abundance"].max())
    
+    if abs(bin_min - bin_max) < 0.005:
+        value = bin_min
+        bin_min, bin_max = value - 0.5, value + 0.5
+
+
     hist_kwds = {
         "histtype": "step",
         "bins": np.linspace(bin_min, bin_max, bins + 1),
@@ -1335,7 +1349,7 @@ def differential_line_abundances(database, element, ion, bins=50,
 
 
 def line_abundances(database, element, ion, reference_column, aux_column=None,
-    show_node_comparison=True, show_line_comparison=True, uncertainties=False,
+    extent=None, show_node_comparison=True, show_line_comparison=True, uncertainties=False,
     abundance_format="x_fe", **kwargs):
     """
     Show the reference and relative abundances for a given element and ion
@@ -1519,6 +1533,8 @@ def line_abundances(database, element, ion, reference_column, aux_column=None,
             x_limits[1] = proposed_x_limits[1]
         if proposed_y_limits[1] > y_limits[1]:
             y_limits[1] = proposed_y_limits[1]
+
+    y_limits = extent or y_limits
 
     for ax in axes.flatten():
         ax.set_xlim(x_limits)
@@ -1749,21 +1765,52 @@ def load_benchmarks(filename):
                 mean, sigma = map(float, (abundance_info[0], abundance_info[-1]))
             else:
                 mean, sigma = abundance_info, np.nan
-
+ 
             cleaned_abundances[species] = (mean, sigma)
 
         kwds = data[name].copy()
+        kwds.setdefault("teff", np.nan)
+        kwds.setdefault("logg", np.nan)
+        kwds.setdefault("feh", np.nan)
         kwds.update({
             "name": name,
-            "abundances": cleaned_abundances
+            "abundances": cleaned_abundances,
+
         })
         benchmarks.append(Benchmark(**kwds))
     return benchmarks
 
 
+def compare_benchmarks(database, element, ion, benchmarks_filename, bins=20,
+    extent=None, **kwargs):
+    
+    # Load the unique benchmarks, and get data for each one.
+    figures = {}
+    for benchmark in load_benchmarks(benchmarks_filename):
+
+        measurements = data.retrieve_table(database,
+            """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
+            cname, snr, ges_fld, ges_type, object FROM node_results ORDER BY cname) n
+            ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname AND
+            ges_type like '%_BM' AND
+            (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
+                element, ion, benchmark.name))
+
+        if benchmark.name == "HD140283":
+            raise a
+
+        figures[benchmark.name] = _compare_abundances_from_repeat_spectra(
+            measurements, element, ion, bins=bins, extent=extent,
+            reference_abundance=benchmark.abundances[element][0],
+            reference_uncertainty=benchmark.abundances[element][1],
+            reference_label=benchmark.name, **kwargs)
+
+    return figures
+
+
 
 def benchmark_line_abundances(database, element, ion, benchmark_filename,
-    sort_by=None, **kwargs):
+    sort_by=None, extent=(-0.5, 0.5), **kwargs):
     """
     Show the line abundances for the benchmark stars. Information for each
     benchmark star should be contained in the `benchmark_filename` provided.
@@ -1774,16 +1821,17 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
     # a reference abundance for these benchmarks?
     benchmarks = load_benchmarks(benchmark_filename)
 
+    bm_abundance_repr = element # '{0} {1}'.format(element, ion)
+
     # Ensure we have a measured abundance for this species.
-    benchmarks = [bm for bm in benchmarks if bm.abundances.get("{0} {1}".format(
-        element, ion), False)]
+    benchmarks = [bm for bm in benchmarks if bm.abundances.get(bm_abundance_repr, False)]
 
     sort_by = sort_by or "name"
     benchmarks = sorted(benchmarks, key=lambda bm: getattr(bm, sort_by))
 
     measurements = data.retrieve_table(database,
         """SELECT * FROM line_abundances l JOIN
-        (SELECT cname, ges_fld FROM node_results WHERE GES_TYPE LIKE '%_BM') n
+        (SELECT cname, ges_fld, object FROM node_results WHERE GES_TYPE LIKE '%_BM') n
         ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname)
         ORDER BY wavelength ASC""".format(element, ion))
 
@@ -1793,7 +1841,29 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
             = np.round(measurements["wavelength"], decimals)
     wavelengths = sorted(set(measurements["wavelength"]))
 
-    fig, axes = plt.subplots(len(wavelengths))
+    # Colours for different nodes.
+    cmap = kwargs.pop("cmap", plt.cm.Paired)
+    all_nodes = sorted(set(measurements["node"]))
+    cmap_indices = np.linspace(0, 1, len(all_nodes))
+
+    Nx, Ny = 1, len(wavelengths)
+    xscale, yscale, escale = (8, 2, 2)
+    xspace, yspace = (0.05, 0.1)
+    lb, tr = (0.5, 0.2)
+    xs = xscale * Nx + xscale * (Nx - 1) * xspace
+    ys = yscale * Ny + yscale * (Ny - 1) * yspace
+
+    xdim = lb * escale + xs + tr * escale
+    ydim = lb * escale + ys + tr * escale 
+
+    fig, axes = plt.subplots(Ny, Nx, figsize=(xdim, ydim))
+    fig.subplots_adjust(
+        left=(lb * escale)/xdim,
+        right=(tr * escale + xs)/xdim,
+        bottom=(lb * escale)/ydim,
+        top=(tr * escale + ys)/ydim,
+        wspace=xspace, hspace=yspace)
+
     measurements = measurements.group_by(["wavelength"])
     for i, (ax, wavelength, group) \
     in enumerate(zip(axes, wavelengths, measurements.groups)):
@@ -1805,34 +1875,81 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
         x_data = { node: [] for node in nodes }
         y_data = { node: [] for node in nodes }
         y_err = { node: [] for node in nodes }
+        y_mean_offsets = { node: [] for node in nodes }
 
         for j, benchmark in enumerate(benchmarks):
+            logger.debug("Matching on {}".format(benchmark))
 
             # Either matches on OBJECT or GES_FLD
+            name = benchmark.name.lower()
+            group["ges_fld"] = map(str.strip, map(str.lower, group["ges_fld"]))
+            group["1.object"] = map(str.strip, map(str.lower, group["1.object"]))
             match = np.array([k for k, row in enumerate(group) \
-                if benchmark.name.lower() == row["ges_fld"].lower().strip() \
-                or benchmark.name.lower() == row["object"].lower().strip()])
+                if name == row["ges_fld"] or name == row["1.object"]])
+
+            logger.debug("Found {0} matches for {1}".format(
+                len(match), benchmark))
+
+            if not any(match):
+                logger.warn("Found no benchmark matches for {0}"\
+                    .format(benchmark))
+                continue
 
             for node in nodes:
                 match_node = match[group["node"][match] == node]
 
                 x_data[node].extend(j * np.ones(len(match_node)))
-                y_data[node].extend(group["abundance"][match_node] \
-                    - benchmark.abundances["{0} {1}".format(element, ion)][0])
+                difference = group["abundance"][match_node] \
+                    - benchmark.abundances[bm_abundance_repr][0]
+                y_data[node].extend(difference)
                 y_err[node].extend(group["e_abundance"][match_node])
 
+                y_mean_offsets[node].append(np.nanmean(difference))
 
-        for k, (c, node) in enumerate(zip(['r', 'b', 'g'], nodes)):
-            ax.scatter(np.array(x_data[node]) + float(k)/len(nodes), y_data[node],
-                facecolor=c)
+        x_offsets = np.linspace(0, 0.3, len(all_nodes))
+        x_offsets -= x_offsets.mean()
+        for k, node in enumerate(nodes):
+
+            # Keep nodes slightly offset from each otgher so we can still see
+            # them all.
+            # spacing: 0.5
+            # 0.5/len(all_nodes)
+
+            x = 0.5 + np.array(x_data[node]) + x_offsets[k]
+            y = np.array(y_data[node])
+            yerr = np.array(y_err[node])
+            ax.errorbar(x, y, yerr=yerr, lc="k", ecolor="k", aa=True, fmt=None,
+                mec="k", mfc="w", ms=6, zorder=1)
+            
+            ax.scatter(x, y, facecolor=cmap(cmap_indices[all_nodes.index(node)]),
+                s=30)
+
 
         # Show relative mean and std. dev for each node
+        for node in nodes:
+            color = cmap(cmap_indices[all_nodes.index(node)])
+            mean = np.nanmean(y_data[node])
+            #sigma = np.nanstd(y_data[node])
+
+            ax.axhline(np.nanmean(y_mean_offsets[node]), c=color, lw=2,
+                linestyle=":")
+
+            #ax.axhspan(mean - sigma, mean + sigma, ec=None, fc=color, alpha=0.5,
+            #    zorder=-10)
+            ax.axhline(mean, c=color, lw=2, zorder=-1, label=node.strip())
+
+            raise a
+            # Do pmean per actual star.
 
 
-        ax.axhline(0, c="k")
+
+        ax.axhline(0, c="k", zorder=0)
+        # TODO: Show uncertainty in each benchmark?
         ax.set_ylabel(r"$\Delta\log_{\epsilon}({\rm X})$")
 
+        ax.set_xlim(0, 1 + len(benchmarks))
         if ax.is_last_row():
+            ax.legend(loc="lower left", mode="expand", fontsize=12)
             ax.set_xticks(range(len(benchmarks)))
             ax.set_xticklabels([benchmark.name for benchmark in benchmarks],
                 rotation=45)
@@ -1840,9 +1957,15 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
             ax.set_xticklabels([])
 
     # Common y-axis limits.
-    y_lim = max([np.abs(ax.get_ylim()).max() for ax in axes])
-    [ax.set_ylim(-y_lim, +y_lim) for ax in axes]
+    if extent is None:
+        y_lim = max([np.abs(ax.get_ylim()).max() for ax in axes])
+        [ax.set_ylim(-y_lim, +y_lim) for ax in axes]
+    else:
+        [ax.set_ylim(extent) for ax in axes]
 
+        # Mark how many lines are out of the frame.
+
+    fig.tight_layout()
 
     raise a
 
@@ -1858,6 +1981,11 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
         # sql_match: [optional]
         # abundances:
             #Si 2: 0.5, 0.2
+
+
+
+
+
 
 
 
@@ -1882,6 +2010,12 @@ if __name__ == "__main__":
 
     import psycopg2 as pg
     db = pg.connect(**kwds)
+
+    figures = compare_benchmarks(db, "Si", 1, "benchmarks.yaml")
+    
+    #for name, fig in figures.items():
+    #    fig.savefig("figures/SI1/compare-bm-{0}.png".format(name))
+    #raise a
 
 
     fig = benchmark_line_abundances(db, "Si", 2, "benchmarks.yaml")
