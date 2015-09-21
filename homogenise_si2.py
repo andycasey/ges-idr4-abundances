@@ -4,21 +4,52 @@
 __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
 import psycopg2 as pg
-import flags
+import biases, flags, homogenise
 
 
-db = pg.connect(dbname="arc")
+kwds = {
+    "host": "/tmp/",
+    "dbname": "arc",
+    "user": "arc",
+    "password": "password"
+}
+
+db = pg.connect(**kwds)
 
 element, ion = ("Si", 2)
 
-
 # Flag any lines that should be discarded, from specific nodes?
-#flag_id = flags.create_line_abundance_flag(db, "")
-#flags.update_line_abundance_flag(db, [flag_id], )
-#flags.update_line_abundance_flag(database, [flag_id], where, values=None):
+flag_id = flags.retrieve_or_create_line_abundance_flag(db,
+    "Abundance is non-physical")
+num_rows = flags.update_line_abundance_flag(db, [flag_id],
+    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
+        (abundance > 9 OR abundance < 5)""".format(element, ion))
 
-# [EPINARBO] Any lines with log(Si 2) > 9 are unphysical (check they a)
+# Any LUMBA Si 2 measurements below X (or REW before Y) should be flagged.
+# They look 
+flag_id = flags.retrieve_or_create_line_abundance_flag(db, 
+    "Weak suspicious measurement based on comparisons to all other nodes")
+num_rows2 = flags.update_line_abundance_flag(db, [flag_id],
+    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
+    AND node LIKE 'Lumba%' AND abundance < 6 AND flags = 0""".format(element, ion))
 
+
+# Calculate biases.
+solar_biases = biases.solar_abundance_biases(db, element, ion)
+for node in solar_biases:
+    for wavelength, (bias, sigma, N) in solar_biases[node].items():
+        rows = biases.apply_offset(db, element, ion, node, wavelength, -bias)
+
+
+import plot
+
+fig = plot.differential_line_abundances(db, element, ion, scaled=True,
+    ignore_flags=True)
+
+
+# Plot differential-line-abundances with unflagged, scaled abundances.
+
+# Looks OK? continue
 
 
 # Calculate any biases for any lines, for any nodes?
@@ -27,8 +58,9 @@ element, ion = ("Si", 2)
 
 
 # Perform the homogenisation.
-homogenise_species(database, element, ion)
+result = homogenise.species(db, element, ion)
 
+raise a 
 # Produce comparison figures.
 
 # - node-to-node scatter plot

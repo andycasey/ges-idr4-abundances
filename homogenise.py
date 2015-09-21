@@ -203,12 +203,14 @@ def match_node_line_abundances(database, element, ion, wavelength,
 
 
 def _homogenise_spectrum_line_abundances(database, element, ion, measurements,
-    rho, nodes, column="scaled_abundance", e_column="e_abundance", **kwargs):
+    rho, nodes, scaled=True, **kwargs):
 
     # Note that by default we use scaled_abundance, not abundance, such that we
     # can apply any offsets or scaling as necessary *before* the homogenisation
     # begins.
 
+    e_column = "e_abundance"
+    column = "scaled_abundance" if scaled else "abundance"
 
     N_measurements = np.isfinite(measurements[column]).sum()
 
@@ -266,7 +268,7 @@ def _homogenise_spectrum_line_abundances(database, element, ion, measurements,
     return (abundance_mean, abundance_sigma, N, unique_id)
 
 
-def homogenise_line_abundances(database, element, ion, cname, wavelength,
+def line_abundances(database, element, ion, cname, wavelength,
     rho, nodes, wavelength_tolerance=0.1, **kwargs):
     """
     Homogenise the line abundances for a given element, ion, star and wavelength
@@ -330,8 +332,8 @@ def homogenise_line_abundances(database, element, ion, cname, wavelength,
             AND flags = 0 AND wavelength = %s ORDER BY node ASC""",
             (element, ion, cname, wavelength))
 
-    assert measurements is not None
-
+    if measurements is None: return
+    
     # Account for repeat spectra for a single star.
     results = {}
     measurements = measurements.group_by(["spectrum_filename_stub"])
@@ -343,11 +345,13 @@ def homogenise_line_abundances(database, element, ion, cname, wavelength,
     return results
 
 
-def homogenise_average_abundances(database, element, ion, cname):
+def average_abundances(database, element, ion, cname):
     """
     Average the homogenised line abundances for a given star.
     """
     # TODO DOCO
+
+    column, e_column = "abundance", "e_abundance"
 
     # Get the data for this star/spectrum filename stub.
     line_abundances = data.retrieve_table(database,
@@ -363,14 +367,15 @@ def homogenise_average_abundances(database, element, ion, cname):
 
         # Calculate a weighted mean and variance.
         # TODO: currently ignoring the covariance between lines.
-        inv_variance = 1.0/(group["e_abundance"]**2)
+        inv_variance = 1.0/(group[e_column]**2)
         weights = inv_variance/np.sum(inv_variance)
 
-        mu = np.sum(group["abundance"] * weights)
-        sigma = np.sqrt(np.sum(weights**2 * group["e_abundance"]**2))
+        mu = np.sum(group[column] * weights)
+        sigma = np.sqrt(np.sum(weights**2 * group[e_column]**2))
 
         # Update the line abundance.
-        N_lines = len(group)
+        assert len(group) == len(set(group["wavelength"]))
+        N_lines = len(set(group["wavelength"]))
         N_measurements = sum(line_abundances["num_measurements"])
 
         result = update_homogenised_abundance(database, element, ion,
@@ -382,7 +387,7 @@ def homogenise_average_abundances(database, element, ion, cname):
     return None
 
 
-def homogenise_species(database, element, ion, **kwargs):
+def species(database, element, ion, **kwargs):
     """
     Homogenise the line abundances for all stars for a given element and ion.
 
@@ -429,14 +434,14 @@ def homogenise_species(database, element, ion, **kwargs):
 
         # For each cname, homogenise this line.
         for j, cname in enumerate(cnames):
-            homogenise_line_abundances(database, element, ion, cname,
-                wavelength, rho, nodes)
+            line_abundances(database, element, ion, cname,
+                wavelength, rho, nodes, **kwargs)
 
     # Need to commit before we can do the averaged results per star.
     database.commit()
 
     for j, cname in enumerate(cnames):
-        homogenise_average_abundances(database, element, ion, cname)
+        average_abundances(database, element, ion, cname, **kwargs)
 
     database.commit()
 
@@ -499,7 +504,7 @@ if __name__ == "__main__":
 
 
 
-    homogenise_species(database, "Si", 2)
+    species(database, "Si", 2)
 
 
     raise a

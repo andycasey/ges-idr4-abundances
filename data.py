@@ -40,6 +40,7 @@ def update(database, query, values=None, full_output=False, **kwargs):
         tuple or dict
     """
 
+    logger.debug("Running SQL update query: {}".format(query))
     names, results, cursor = execute(database, query, values, **kwargs)
     return (names, results, cursor) if full_output else cursor.rowcount
     

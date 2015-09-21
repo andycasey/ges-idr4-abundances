@@ -73,12 +73,27 @@ def solar_abundance_biases(database, element, ion, **kwargs):
 
 
 
-def apply_solar_biases(database, element, ion):
-    """
+def apply_offset(database, element, ion, node, wavelength, offset,
+    wavelength_tolerance=0.1):
+    '''
+    Apply an offset to the abundance measurements.
+    '''
 
-    """
-    raise NotImplementedError
+    # Get the relevant line IDs
+    ids = data.retrieve_column(database,
+        """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
+        AND node ILIKE '{2}%' AND wavelength > '{3}' AND wavelength < '{4}'"""\
+        .format(element, ion, node, wavelength - wavelength_tolerance,
+            wavelength + wavelength_tolerance), asarray=True)
+    if ids is None: return 0
 
+    # Apply the offset.
+    rows = data.update(database,
+        """UPDATE line_abundances
+        SET scaled_abundance = abundance + {0} WHERE id IN %s""".format(offset),
+        (tuple(ids), ))
+    database.commit()
+    return rows
 
 
 if __name__ == "__main__":

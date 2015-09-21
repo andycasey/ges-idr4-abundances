@@ -43,6 +43,35 @@ def unset_bitmask(bitmask):
     return [i for i in range(1, 1 + int(np.log2(bitmask))) if bitmask >> i & 1]
 
 
+def retrieve_or_create_line_abundance_flag(database, description):
+    """
+    Retrieve or create a line abundance flag for the description provided.
+
+    :param database:
+        A PostgreSQL database connection.
+
+    :type database:
+        :class:`~psycopg2.connection`
+
+    :param description:
+        The human-readable description of the flag.
+
+    :type description:
+        str
+
+    :returns:
+        The given unique id for the created flag.
+    """
+
+    result = data.retrieve(database,
+        "SELECT id from line_abundance_flags WHERE description = %s",
+        (description, ))
+    if len(result):
+        return result[0][0]
+
+    return create_line_abundance_flag(database, description)
+
+
 def create_line_abundance_flag(database, description):
     """
     Add a new line abundance flag description to the database.
@@ -63,8 +92,10 @@ def create_line_abundance_flag(database, description):
         The given unique id for the created flag.
     """
 
-    return data.retrieve(database, """INSERT INTO line_abundance_flags 
+    result = data.retrieve(database, """INSERT INTO line_abundance_flags 
         (description) VALUES (%s) RETURNING id""", (description, ))[0][0]
+    database.commit()
+    return result
 
 
 def search_line_abundance_flags(database, keyword):
@@ -117,7 +148,7 @@ def flag_exists(database, flag_id):
         SELECT 1 FROM line_abundance_flags WHERE id = %s)""", (flag_id, ))[0][0]
 
 
-def update_line_abundance_flag(database, flag_ids, where, values=None):
+def update_line_abundance_flag(database, flag_ids, query, values=None):
     """
     Update the flags for some line abundances with the given IDs.
 
@@ -127,10 +158,10 @@ def update_line_abundance_flag(database, flag_ids, where, values=None):
     :type database:
         :class:`~psycopg2.connection`
 
-    :param where:
-        The 'where' component of the SQL query.
+    :param query:
+        A SQL query on line_abundances that returns the ids of the relevant lines
 
-    :type where:
+    :type query:
         str
 
     :param flag_ids:
@@ -155,8 +186,17 @@ def update_line_abundance_flag(database, flag_ids, where, values=None):
         raise ValueError("the following flag ids provided do not exist: {0}"\
             .format(", ".join([str(k) for k, v in exists.items() if not v])))
 
-    query_values = [set_bitmask(flag_ids)]
-    if values is not None: query_values.append(values)
-    return data.update(database, 
-        "UPDATE line_abundances SET flags = %s FROM node_results WHERE "+ where,
-        query_values) # Naughty! #TODO
+    # Find the ids that will be affected.
+    ids = data.retrieve_table(database, query, values)
+    if ids is None: return 0
+    
+    assert "id" in ids.dtype.names
+
+    # TODO: Update any existing flags.
+    values = (set_bitmask(flag_ids), tuple(ids["id"]))
+    num_rows =  data.update(database, 
+        "UPDATE line_abundances SET flags = %s WHERE id IN %s", values)
+    database.commit()
+    return num_rows
+
+
