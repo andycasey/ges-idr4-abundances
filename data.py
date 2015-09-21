@@ -112,7 +112,7 @@ def execute(database, query, values=None, fetch=False, **kwargs):
         try:
             logger.info("Took {0:.0f} ms for SQL query {1}".format(taken,
                 " ".join((query % values).split())))
-        except TypeError:
+        except (TypeError, ValueError):
             logger.info("Took {0:.0f} ms for SQL query {1} with values {2}"\
                 .format(taken, query, values))
 

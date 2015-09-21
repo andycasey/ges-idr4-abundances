@@ -4,6 +4,8 @@
 
 import logging
 import itertools
+import yaml
+
 from collections import Counter
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
@@ -1724,6 +1726,142 @@ def line_abundance_correlations(database, element, ion, wavelength, tol=0.1,
     return corner_scatter(X, labels=nodes, relevant_text=text, **kwargs)
 
 
+
+from collections import namedtuple
+
+def load_benchmarks(filename):
+
+    Benchmark = namedtuple('Benchmark', 'name, teff, logg, feh, abundances')
+
+    with open(filename, "r") as fp:
+        data = yaml.load(fp)
+
+    # For each star, clean up the abundances into the right format.
+    benchmarks = []
+    for name in data.keys():
+        cleaned_abundances = {}
+        for species, abundance_info in data[name].get("abundances", {}).items():
+            try:
+                abundance_info = float(abundance_info)
+            except:
+                # Some uncertainty in it?
+                abundance_info = abundance_info.split()
+                mean, sigma = map(float, (abundance_info[0], abundance_info[-1]))
+            else:
+                mean, sigma = abundance_info, np.nan
+
+            cleaned_abundances[species] = (mean, sigma)
+
+        kwds = data[name].copy()
+        kwds.update({
+            "name": name,
+            "abundances": cleaned_abundances
+        })
+        benchmarks.append(Benchmark(**kwds))
+    return benchmarks
+
+
+
+def benchmark_line_abundances(database, element, ion, benchmark_filename,
+    sort_by=None, **kwargs):
+    """
+    Show the line abundances for the benchmark stars. Information for each
+    benchmark star should be contained in the `benchmark_filename` provided.
+
+    """
+
+    # Load the benchmarks. How many do we have, can we match them, do we have
+    # a reference abundance for these benchmarks?
+    benchmarks = load_benchmarks(benchmark_filename)
+
+    # Ensure we have a measured abundance for this species.
+    benchmarks = [bm for bm in benchmarks if bm.abundances.get("{0} {1}".format(
+        element, ion), False)]
+
+    sort_by = sort_by or "name"
+    benchmarks = sorted(benchmarks, key=lambda bm: getattr(bm, sort_by))
+
+    measurements = data.retrieve_table(database,
+        """SELECT * FROM line_abundances l JOIN
+        (SELECT cname, ges_fld FROM node_results WHERE GES_TYPE LIKE '%_BM') n
+        ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname)
+        ORDER BY wavelength ASC""".format(element, ion))
+
+    decimals = kwargs.pop("__round_wavelengths", 1)
+    if decimals >= 0:
+        measurements["wavelength"] \
+            = np.round(measurements["wavelength"], decimals)
+    wavelengths = sorted(set(measurements["wavelength"]))
+
+    fig, axes = plt.subplots(len(wavelengths))
+    measurements = measurements.group_by(["wavelength"])
+    for i, (ax, wavelength, group) \
+    in enumerate(zip(axes, wavelengths, measurements.groups)):
+
+        # Sub-group by nodes and then build data for each benchmark.
+        nodes = sorted(set(group["node"]))
+
+        # Match the data to the benchmarks that we have
+        x_data = { node: [] for node in nodes }
+        y_data = { node: [] for node in nodes }
+        y_err = { node: [] for node in nodes }
+
+        for j, benchmark in enumerate(benchmarks):
+
+            # Either matches on OBJECT or GES_FLD
+            match = np.array([k for k, row in enumerate(group) \
+                if benchmark.name.lower() == row["ges_fld"].lower().strip() \
+                or benchmark.name.lower() == row["object"].lower().strip()])
+
+            for node in nodes:
+                match_node = match[group["node"][match] == node]
+
+                x_data[node].extend(j * np.ones(len(match_node)))
+                y_data[node].extend(group["abundance"][match_node] \
+                    - benchmark.abundances["{0} {1}".format(element, ion)][0])
+                y_err[node].extend(group["e_abundance"][match_node])
+
+
+        for k, (c, node) in enumerate(zip(['r', 'b', 'g'], nodes)):
+            ax.scatter(np.array(x_data[node]) + float(k)/len(nodes), y_data[node],
+                facecolor=c)
+
+        # Show relative mean and std. dev for each node
+
+
+        ax.axhline(0, c="k")
+        ax.set_ylabel(r"$\Delta\log_{\epsilon}({\rm X})$")
+
+        if ax.is_last_row():
+            ax.set_xticks(range(len(benchmarks)))
+            ax.set_xticklabels([benchmark.name for benchmark in benchmarks],
+                rotation=45)
+        else:
+            ax.set_xticklabels([])
+
+    # Common y-axis limits.
+    y_lim = max([np.abs(ax.get_ylim()).max() for ax in axes])
+    [ax.set_ylim(-y_lim, +y_lim) for ax in axes]
+
+
+    raise a
+
+
+
+
+
+    # format:
+    #name:
+        # teff:
+        # logg:
+        # feh:
+        # sql_match: [optional]
+        # abundances:
+            #Si 2: 0.5, 0.2
+
+
+
+
 if __name__ == "__main__":
 
 
@@ -1744,6 +1882,10 @@ if __name__ == "__main__":
 
     import psycopg2 as pg
     db = pg.connect(**kwds)
+
+
+    fig = benchmark_line_abundances(db, "Si", 2, "benchmarks.yaml")
+
 
 
     raise a
@@ -1777,8 +1919,12 @@ if __name__ == "__main__":
     #fig = line_abundances(db, "Si", 1, "feh", aux_column="teff",
     #    aux_extent=(3500, 7500))
     #fig.savefig("figures/tmp.png")
+
+    fig = differential_line_abundances(db, "Si", 1, absolute_extent=(5, 9))
+    fig.savefig("figures/SI1-differential-line-abundances.png")
+
     fig = differential_line_abundances(db, "Si", 2, absolute_extent=(5, 9))
-    fig.savefig("figures/SI2/differential-line-abundances.png")
+    fig.savefig("figures/SI2-differential-line-abundances.png")
     raise a
     #transition_covariance(db, "Si", 1)
     #mean_abundance_against_stellar_parameters(db, "Si", 1)

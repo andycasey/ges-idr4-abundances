@@ -423,7 +423,10 @@ def homogenise_average_abundances(database, element, ion, cname):
     line_abundances = data.retrieve_table(database,
         """SELECT * FROM homogenised_line_abundances WHERE element = %s
         AND ion = %s AND cname = %s""", (element, ion, cname))
-    assert line_abundances is not None
+
+    if line_abundances is None:
+        # No line abundances, so nothing to do.
+        return None
 
     line_abundances = line_abundances.group_by(["spectrum_filename_stub"])
     for i, group in enumerate(line_abundances.groups):
