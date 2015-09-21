@@ -114,7 +114,7 @@ def parse_line_abundances(filename):
                         "element": element,
                         "ion": int(ion),
                         "ew": safe_float(ew),
-                        "e_ew": safe_float(ew),
+                        "e_ew": safe_float(e_ew),
                         "upper_ew": int(upper_ew),
                         "abundance": safe_float(abundance),
                         "e_abundance": safe_float(e_abundance),
@@ -131,7 +131,7 @@ def parse_line_abundances(filename):
                         "element": element,
                         "ion": int(ion),
                         "ew": safe_float(ew),
-                        "e_ew": safe_float(ew),
+                        "e_ew": safe_float(e_ew),
                         "upper_ew": safe_int(upper_ew),
                         "abundance": safe_float(abundance),
                         "e_abundance": safe_float(e_abundance),
@@ -146,9 +146,9 @@ def parse_line_abundances(filename):
                     row.update({
                         "wavelength": wavelength,
                         "element": element,
-                        "ion": int(ion),
+                        "ion": int(ion[0]),
                         "ew": safe_float(ew),
-                        "e_ew": safe_float(ew),
+                        "e_ew": safe_float(e_ew),
                         "upper_ew": safe_int(upper_ew),
                         "abundance": safe_float(abundance),
                         "e_abundance": safe_float(e_abundance),
@@ -158,6 +158,8 @@ def parse_line_abundances(filename):
 
                 else:
                     raise WTFError
+
+                assert 3 > row["ion"]
 
                 # Assume no scaling/homogenisation for any abundances.
                 row["scaled_abundance"] = row["abundance"]
@@ -664,10 +666,10 @@ if __name__ == "__main__":
     from glob import glob
 
     kwds = {
-        "host": "/tmp/",
+    #    "host": "/tmp/",
         "dbname": "arc",
-        "user": "arc",
-        "password": os.environ.get('PSQL_PW', None)
+    #    "user": "arc",
+    #    "password": os.environ.get('PSQL_PW', None)
     }
 
     connection = pg.connect(**kwds)
