@@ -44,72 +44,72 @@ def make_figures(figures, database, element, ion, format="png"):
 
 if __name__ == "__main__":
 
+    from collections import OrderedDict
     absolute_extent = (5, 9)
-    figures = {
-        "compare-bm": (plot.compare_benchmarks,
-            { "benchmarks_filename": "benchmarks.yaml" }),
-        "compare-solar": plot.compare_solar,
-        "compare-m67-1194": plot.compare_m67_twin,
-        "percentile": plot.percentiles,
-        "differential-line-abundances": plot.differential_line_abundances,
-        "differential-line-abundances-clipped": (
-            plot.differential_line_abundances, { "absolute_extent": absolute_extent }),     
-        "line-abundances-logx-wrt-teff": (plot.line_abundances, {
+    figures = OrderedDict([
+        ("compare-bm", (plot.compare_benchmarks,
+            { "benchmarks_filename": "benchmarks.yaml" })),
+        ("compare-solar", plot.compare_solar),
+        ("compare-m67-1194", plot.compare_m67_twin),
+        ("percentile", plot.percentiles),
+        ("differential-line-abundances", plot.differential_line_abundances),
+        ("differential-line-abundances-clipped", (
+            plot.differential_line_abundances, { "absolute_extent": absolute_extent })),  
+        ("line-abundances-logx-wrt-teff", (plot.line_abundances, {
             "reference_column": "teff",
             "aux_column": "logg",
             "aux_extent": (3500, 7500),
             "extent": None,
             "show_node_comparison": False,
             "show_line_comparison": False,
-            }),
-        "line-abundances-logx-wrt-logg": (plot.line_abundances, {
+            })),
+        ("line-abundances-logx-wrt-logg", (plot.line_abundances, {
             "reference_column": "logg",
             "aux_column": "feh",
             "aux_extent": (0, 5),
             "extent": None,
             "show_node_comparison": False,
             "show_line_comparison": False,
-            }),
-        "line-abundances-logx-wrt-feh": (plot.line_abundances, {
+            })),
+        ("line-abundances-logx-wrt-feh", (plot.line_abundances, {
             "reference_column": "feh",
             "aux_column": "teff",
             "aux_extent": (-3, 1),
             "extent": None,
             "show_node_comparison": False,
             "show_line_comparison": False,
-            }),
+            })),
 
-        "line-abundances-xfe-wrt-teff": (plot.line_abundances, {
+        ("line-abundances-xfe-wrt-teff", (plot.line_abundances, {
             "reference_column": "teff", "aux_column": "logg",
-            "aux_extent": (0, 5) }),
-        "line-abundances-xfe-wrt-logg": (plot.line_abundances, {
+            "aux_extent": (0, 5) })),
+        ("line-abundances-xfe-wrt-logg", (plot.line_abundances, {
             "reference_column": "logg", "aux_column": "feh",
-            "aux_extent": (-3, 1) }),
-        "line-abundances-xfe-wrt-feh": (plot.line_abundances, {
+            "aux_extent": (-3, 1) })),
+        ("line-abundances-xfe-wrt-feh", (plot.line_abundances, {
             "reference_column": "feh", "aux_column": "teff",
-            "aux_extent": (3500, 7000) }),
+            "aux_extent": (3500, 7000) })),
 
-
-        "abundance-heatmap": (plot.transition_heatmap, {"column": "abundance"}),
-        "ew-heatmap": (plot.transition_heatmap, {"column": "ew"}),
+        ("abundance-heatmap", (plot.transition_heatmap, {"column": "abundance"})),
+        ("ew-heatmap", (plot.transition_heatmap, {"column": "ew"})),
         #"abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
         #"ew-covariance": (plot.transition_covariance, {"column": "ew"}),
-        "mean-abundance-sp": plot.mean_abundance_against_stellar_parameters,
-        "mean-abundance-differences": (plot.mean_abundance_differences, {
-            "extent": absolute_extent }),
-        "line-abundances-rew": (plot.all_node_individual_line_abundance_differences,
-            {"rew_on_x_axis": True}),
-        "line-abundances": (plot.all_node_individual_line_abundance_differences,
-            {"rew_on_x_axis": False}),
-        "line-abundances-rew-clip": (plot.all_node_individual_line_abundance_differences,
-            {"rew_on_x_axis": True, "x_extent": (-6.5, -4), "y_extent": (-1.5, 1.5), "vmin": 6, "vmax": 9}),
-        "line-abundances-clip": (plot.all_node_individual_line_abundance_differences,
-            {"rew_on_x_axis": False, "x_extent": absolute_extent, "y_extent": (-1.5, 1.5)}),    
-    }
+        ("mean-abundance-sp", plot.mean_abundance_against_stellar_parameters),
+        ("mean-abundance-differences", (plot.mean_abundance_differences, {
+            "extent": absolute_extent })),
+        ("line-abundances-rew", (plot.all_node_individual_line_abundance_differences,
+            {"rew_on_x_axis": True})),
+        ("line-abundances", (plot.all_node_individual_line_abundance_differences,
+            {"rew_on_x_axis": False})),
+        ("line-abundances-rew-clip", (plot.all_node_individual_line_abundance_differences,
+            {"rew_on_x_axis": True, "x_extent": (-6.5, -4), "y_extent": (-1.5, 1.5), "vmin": 6, "vmax": 9})),
+        ("line-abundances-clip", (plot.all_node_individual_line_abundance_differences,
+            {"rew_on_x_axis": False, "x_extent": absolute_extent, "y_extent": (-1.5, 1.5)})),    
+    ])
 
     species = [
-        ("Si", 1), # Done
         ("Si", 2), # Done
+        ("Si", 1), # Done
     ]
     """
         ("Al", 1),

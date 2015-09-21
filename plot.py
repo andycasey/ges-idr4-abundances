@@ -123,7 +123,8 @@ def mean_abundance_against_stellar_parameters(database, element, ion, node=None,
         fig, (ax_teff, ax_logg, ax_feh) = plt.subplots(3)
         data = retrieve_table(database, "SELECT teff, logg, feh, {0}, nl_{0} "\
             "FROM node_results WHERE node = %s".format(column), (node, ))
-        if data is None or np.isfinite(data[column]).sum() == 0: continue
+        if data is None or np.isfinite(data[column].astype(float)).sum() == 0:
+            continue
 
         _scatter_elements(ax_teff, data, "teff", column, limits=limits,
             errors=errors, color_label="nl_{}".format(column))
@@ -380,7 +381,8 @@ def compare_m67_twin(database, element, ion, bins=20, extent=None, **kwargs):
         AND n.ges_fld LIKE 'M67%' AND n.object = '1194')""".format(element, ion)) # Naughty.
 
     return _compare_abundances_from_repeat_spectra(data, element, ion, bins=bins,
-        extent=extent, **kwargs)
+        extent=extent, reference_abundance=utils.solar_abundance(element),
+        reference_label="Solar value", **kwargs)
 
 
 
@@ -398,7 +400,8 @@ def compare_solar(database, element, ion, bins=20, extent=None, **kwargs):
             AND l.cname LIKE 'ssssss%')""".format(element, ion)) # Naughty.
 
     return _compare_abundances_from_repeat_spectra(data, element, ion, bins=bins,
-        extent=extent, **kwargs)
+        extent=extent, reference_label="Solar",
+        reference_abundance=utils.solar_abundance(element), **kwargs)
 
 
 
@@ -417,6 +420,12 @@ def _compare_abundances_from_repeat_spectra(data, element, ion, reference_label,
     cmap_indices = np.linspace(0, 1, N_nodes)
     bin_min, bin_max = \
         extent or (np.nanmin(data["abundance"]), np.nanmax(data["abundance"]))
+
+    if reference_abundance is not None:
+        if reference_abundance > bin_max:
+            bin_max = reference_abundance + 0.10
+        if reference_abundance < bin_min:
+            bin_min = reference_abundance - 0.10
 
     if bin_min == bin_max:
         bin_min, bin_max = bin_min - 0.5, bin_min + 0.5
@@ -522,7 +531,8 @@ def _compare_abundances_from_repeat_spectra(data, element, ion, reference_label,
         ax_snr.axhline(reference_abundance, c="k", lw=3, label=reference_label,
             zorder=1)
         if reference_uncertainty is not None:
-            ax_snr.axhspan(-reference_uncertainty, +reference_uncertainty,
+            ax_snr.axhspan(reference_abundance - reference_uncertainty,
+                reference_abundance + reference_uncertainty,
                 facecolor="#666666", alpha=0.5, zorder=-100,
                 edgecolor="#666666")
         if ax_snr.is_first_row():
@@ -1403,7 +1413,7 @@ def line_abundances(database, element, ion, reference_column, aux_column=None,
         """SELECT * FROM line_abundances l JOIN
         (SELECT DISTINCT ON (cname) cname, {0} FROM node_results ORDER BY cname)
         n ON (l.element = %s AND l.ion = %s AND l.cname = n.cname)""".format(
-            ", ".join(reference_columns)),
+            ", ".join(set(reference_columns))),
         (element, ion))
     if data is None: return
 
@@ -1453,18 +1463,6 @@ def line_abundances(database, element, ion, reference_column, aux_column=None,
             x = data[reference_column][match]
             y = data["abundance"][match]
 
-            if abundance_format == "x_h":
-                y -= utils.solar_abundance(element)
-            elif abundance_format == "x_fe":
-                y -= utils.solar_abundance(element) + data["feh"][match]
-
-            if aux_column is not None:
-                scatter_kwds["c"] = data[aux_column][match]
-
-            scat = ax.scatter(x, y, **scatter_kwds)
-            if uncertainties:
-                raise NotImplementedError
-
             # Labels and titles
             if ax.is_last_row():
                 ax.set_xlabel(reference_column)
@@ -1474,6 +1472,25 @@ def line_abundances(database, element, ion, reference_column, aux_column=None,
             
             if ax.is_first_row():
                 ax.set_title(wavelength)
+
+
+            if len(x) == 0: continue
+
+            if abundance_format == "x_h":
+                y -= utils.solar_abundance(element)
+            elif abundance_format == "x_fe":
+                y -= utils.solar_abundance(element) + data["feh"][match].astype(float)
+
+            if aux_column is not None:
+                scatter_kwds["c"] = data[aux_column][match]
+
+            
+
+
+            scat = ax.scatter(x, y, **scatter_kwds)
+            if uncertainties:
+                raise NotImplementedError
+
 
     comparison_scatter_kwds = {
         "s": 25,
@@ -1493,7 +1510,9 @@ def line_abundances(database, element, ion, reference_column, aux_column=None,
             if abundance_format == "x_h":
                 y -= utils.solar_abundance(element)
             elif abundance_format == "x_fe":
-                y -= utils.solar_abundance(element) + data["feh"][match]
+                y -= utils.solar_abundance(element) + data["feh"][match].astype(float)
+
+            if len(x) == 0: continue
 
             for j, ax in enumerate(node_axes):
                 ax.scatter(x, y, label="Common line", **comparison_scatter_kwds)
@@ -1507,7 +1526,9 @@ def line_abundances(database, element, ion, reference_column, aux_column=None,
             if abundance_format == "x_h":
                 y -= utils.solar_abundance(element)
             elif abundance_format == "x_fe":
-                y -= utils.solar_abundance(element) + data["feh"][match]
+                y -= utils.solar_abundance(element) + data["feh"][match].astype(float)
+
+            if len(x) == 0: continue
 
             for j, ax in enumerate(line_axes):
                 ax.scatter(x, y, label="Common node", **comparison_scatter_kwds)
@@ -1660,7 +1681,7 @@ def percentiles(database, element, ion, bins=20, **kwargs):
         ax.set_frame_on(False)
 
     # Put the legend in the bluest axes.
-    _ = [ax for ax in axes if len(ax.patches) == N_nodes][0]
+    _ = axes[np.argmax([len(ax.patches) for ax in axes])]
     axes[0].legend(*_.get_legend_handles_labels(), loc="upper left",
         frameon=False, fontsize=14)
 
@@ -1796,9 +1817,6 @@ def compare_benchmarks(database, element, ion, benchmarks_filename, bins=20,
             (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
                 element, ion, benchmark.name))
 
-        if benchmark.name == "HD140283":
-            raise a
-
         figures[benchmark.name] = _compare_abundances_from_repeat_spectra(
             measurements, element, ion, bins=bins, extent=extent,
             reference_abundance=benchmark.abundances[element][0],
@@ -1810,7 +1828,7 @@ def compare_benchmarks(database, element, ion, benchmarks_filename, bins=20,
 
 
 def benchmark_line_abundances(database, element, ion, benchmark_filename,
-    sort_by=None, extent=(-0.5, 0.5), **kwargs):
+    sort_by=None, extent=(-1, +1), **kwargs):
     """
     Show the line abundances for the benchmark stars. Information for each
     benchmark star should be contained in the `benchmark_filename` provided.
@@ -1846,7 +1864,7 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
     all_nodes = sorted(set(measurements["node"]))
     cmap_indices = np.linspace(0, 1, len(all_nodes))
 
-    Nx, Ny = 1, len(wavelengths)
+    Nx, Ny = len(all_nodes), len(wavelengths)
     xscale, yscale, escale = (8, 2, 2)
     xspace, yspace = (0.05, 0.1)
     lb, tr = (0.5, 0.2)
@@ -1864,8 +1882,13 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
         top=(tr * escale + ys)/ydim,
         wspace=xspace, hspace=yspace)
 
+    scatter_kwds = {
+        "s": 50,
+        "zorder": 10
+    }
+
     measurements = measurements.group_by(["wavelength"])
-    for i, (ax, wavelength, group) \
+    for i, (ax_group, wavelength, group) \
     in enumerate(zip(axes, wavelengths, measurements.groups)):
 
         # Sub-group by nodes and then build data for each benchmark.
@@ -1906,62 +1929,67 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
 
                 y_mean_offsets[node].append(np.nanmean(difference))
 
-        x_offsets = np.linspace(0, 0.3, len(all_nodes))
-        x_offsets -= x_offsets.mean()
-        for k, node in enumerate(nodes):
+
+        for k, (ax, node) in enumerate(zip(ax_group, all_nodes)):
+            if ax.is_first_row():
+                ax.set_title(node)
+                if ax.is_first_col():
+                    ax.text(0.05, 0.95, r"${0}$".format(wavelength),
+                        transform=ax.transAxes, horizontalalignment="left",
+                        verticalalignment="top")
+
+            if node not in nodes: continue
+
 
             # Keep nodes slightly offset from each otgher so we can still see
             # them all.
             # spacing: 0.5
             # 0.5/len(all_nodes)
 
-            x = 0.5 + np.array(x_data[node]) + x_offsets[k]
+            x = 0.5 + np.array(x_data[node])
             y = np.array(y_data[node])
             yerr = np.array(y_err[node])
             ax.errorbar(x, y, yerr=yerr, lc="k", ecolor="k", aa=True, fmt=None,
                 mec="k", mfc="w", ms=6, zorder=1)
             
             ax.scatter(x, y, facecolor=cmap(cmap_indices[all_nodes.index(node)]),
-                s=30)
+                **scatter_kwds)
 
-
-        # Show relative mean and std. dev for each node
-        for node in nodes:
+            # Show relative mean and std. dev for each node
             color = cmap(cmap_indices[all_nodes.index(node)])
             mean = np.nanmean(y_data[node])
-            #sigma = np.nanstd(y_data[node])
+            sigma = np.nanstd(y_data[node])
 
             ax.axhline(np.nanmean(y_mean_offsets[node]), c=color, lw=2,
                 linestyle=":")
 
-            #ax.axhspan(mean - sigma, mean + sigma, ec=None, fc=color, alpha=0.5,
-            #    zorder=-10)
+            ax.axhspan(mean - sigma, mean + sigma, ec=None, fc=color, alpha=0.5,
+                zorder=-10)
             ax.axhline(mean, c=color, lw=2, zorder=-1, label=node.strip())
 
-            raise a
-            # Do pmean per actual star.
 
+            ax.axhline(0, c="k", zorder=0)
+            # TODO: Show uncertainty in each benchmark?
 
+            if ax.is_first_col():
+                ax.set_ylabel(r"$\Delta\log_{\epsilon}({\rm X})$")
+            else:
+                ax.set_yticklabels([])
 
-        ax.axhline(0, c="k", zorder=0)
-        # TODO: Show uncertainty in each benchmark?
-        ax.set_ylabel(r"$\Delta\log_{\epsilon}({\rm X})$")
-
-        ax.set_xlim(0, 1 + len(benchmarks))
-        if ax.is_last_row():
-            ax.legend(loc="lower left", mode="expand", fontsize=12)
-            ax.set_xticks(range(len(benchmarks)))
-            ax.set_xticklabels([benchmark.name for benchmark in benchmarks],
-                rotation=45)
-        else:
-            ax.set_xticklabels([])
+            ax.set_xlim(0, len(benchmarks))
+            ax.set_xticks(0.5 + np.arange(len(benchmarks)))
+            if ax.is_last_row():
+                ax.set_xticklabels([benchmark.name for benchmark in benchmarks],
+                    rotation=90)
+            else:
+                ax.set_xticklabels([])
 
     # Common y-axis limits.
     if extent is None:
-        y_lim = max([np.abs(ax.get_ylim()).max() for ax in axes])
-        [ax.set_ylim(-y_lim, +y_lim) for ax in axes]
+        y_lim = max([np.abs(ax.get_ylim()).max() for ax in axes.flatten()])
+        [ax.set_ylim(-y_lim, +y_lim) for ax in axes.flatten()]
     else:
-        [ax.set_ylim(extent) for ax in axes]
+        [ax.set_ylim(extent) for ax in axes.flatten()]
 
         # Mark how many lines are out of the frame.
 
@@ -2011,7 +2039,7 @@ if __name__ == "__main__":
     import psycopg2 as pg
     db = pg.connect(**kwds)
 
-    figures = compare_benchmarks(db, "Si", 1, "benchmarks.yaml")
+    #figures = compare_benchmarks(db, "Si", 1, "benchmarks.yaml")
     
     #for name, fig in figures.items():
     #    fig.savefig("figures/SI1/compare-bm-{0}.png".format(name))
