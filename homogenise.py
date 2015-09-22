@@ -1,209 +1,365 @@
 #!/usr/bin/python
 
-""" Homogenise line abundances. """
+""" Homogenise chemical abundances. """
 
 __author__ = "Andy Casey <arc@ast.cam.ac.uk>"
 
 import logging
 import numpy as np
-from time import time
-
-import data
 
 logger = logging.getLogger("ges")
 
-def update_homogenised_abundance(database, element, ion, cname,
-    spectrum_filename_stub, abundance, uncertainty, num_lines, num_measurements,
+
+class AbundanceHomogenisation(object):
+
+    def __init__(self, release):
+        self.release = release
+
+
+    def species(self, element, ion, **kwargs):
+        """
+        Homogenise the line abundances for all stars for a given element and ion.
+
+        :param element:
+            The element name to homogenise.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to homogenise (1 = neutral).
+
+        :type ion:
+            int
+        """
+
+        # Remove any existing homogenised line or average abundances.
+        self.release.execute("""DELETE FROM homogenised_line_abundances
+            WHERE element = %s AND ion = %s""", (element, ion))
+        self.release.execute("""DELETE FROM homogenised_abundances
+            WHERE element = %s AND ion = %s""", (element, ion))
+        self.release.commit()
+
+        # Get the unique wavelengths.
+        wavelengths = self.release.retrieve_column(
+            """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
+            WHERE element = %s AND ion = %s AND flags = 0
+            ORDER BY wavelength ASC""", (element, ion), asarray=True)
+
+        if self.release.config.round_wavelengths >= 0:
+            wavelengths = \
+                np.round(wavelengths, self.release.config.round_wavelengths)
+
+        # Get the unique CNAMEs.
+        cnames = self.release.retrieve_column(
+            """SELECT DISTINCT ON (cname) cname FROM line_abundances
+            WHERE element = %s AND ion = %s ORDER BY cname ASC""",
+            (element, ion))
+
+        # For each wavelength, approximate the covariance matrix then homogenise
+        # this wavelength for all cnames.
+        col = "scaled_abundance" if kwargs.get("scaled", True) else "abundance"
+        for i, wavelength in enumerate(set(wavelengths)):
+            # Calculate the correlation coefficients for this line.
+            X, nodes = self.release._match_unflagged_line_data(element, ion, 
+                wavelength, col, ignore_gaps=True, **kwargs)
+            rho = np.atleast_2d(np.corrcoef(X))
+
+            # For each cname, homogenise this line.
+            for j, cname in enumerate(cnames):
+                self.line_abundances(element, ion, cname, wavelength, rho, nodes,
+                    **kwargs)
+
+        # Need to commit before we can do the averaged results per star.
+        self.release.commit()
+
+        for j, cname in enumerate(cnames):
+            self.spectrum_abundances(element, ion, cname, **kwargs)
+
+        self.release.commit()
+
+        # TODO what should we return?
+        return None
+
+
+    def line_abundances(self, element, ion, cname, wavelength, rho, nodes,
+        **kwargs):
+        """
+        Homogenise the line abundances for a given element, ion, star and 
+        wavelength.
+
+        :param element:
+            The element name to homogenise.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to homogenise (1 = neutral).
+
+        :type ion:
+            int
+
+        :param cname:
+            The CNAME of the star to perform line abundance homogenisation for.
+
+        :type cname:
+            str
+
+        :param wavelength:
+            The wavelength of the line to homogenise abundances for.
+
+        :type wavelength:
+            float
+
+        :param rho:
+            The node-to-node correlation coefficients for this species.
+
+        :type rho:
+            :class:`~np.array`
+        """
+
+        # Get all valid line abundances for this element, ion, cname.
+        if self.release.config.wavelength_tolerance > 0:   
+            measurements = self.release.retrieve_table("""SELECT * 
+                FROM line_abundances
+                WHERE element = %s AND ion = %s AND cname = %s AND flags = 0
+                AND wavelength >= %s AND wavelength <= %s ORDER BY node ASC""",
+                (element, ion, cname,
+                    wavelength - self.release.config.wavelength_tolerance,
+                    wavelength + self.release.config.wavelength_tolerance))
+        else:
+            measurements = self.release.retrieve_table("""SELECT *
+                FROM line_abundances WHERE element = %s AND ion = %s AND cname 
+                %s AND flags = 0 AND wavelength = %s ORDER BY node ASC""",
+                (element, ion, cname, wavelength))
+        if measurements is None: return
+        
+        # Account for repeat spectra for a single star.
+        results = {}
+        measurements = measurements.group_by(["spectrum_filename_stub"])
+        for i, group in enumerate(measurements.groups):
+
+            mean, sigma, N = _homogenise_spectrum_line_abundances(
+                group, rho, nodes, **kwargs)
+
+            stub = group["spectrum_filename_stub"][0]
+            results[stub] = self.insert_line_abundance(element, ion, cname,
+                stub, wavelength, mean, sigma, N)
+            
+        return results
+
+
+    def spectrum_abundances(self, element, ion, cname, **kwargs):
+        """
+        Average the homogenised line abundances for a given star.
+
+        :param element:
+            The element name to homogenise.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to homogenise (1 = neutral).
+
+        :type ion:
+            int
+
+        :param cname:
+            The CNAME of the star to perform line abundance homogenisation for.
+
+        :type cname:
+            str
+        """
+        
+        # Get the data for this star/spectrum filename stub.
+        line_abundances = self.release.retrieve_table(
+            """SELECT * FROM homogenised_line_abundances WHERE element = %s
+            AND ion = %s AND cname = %s""", (element, ion, cname))
+        if line_abundances is None: return
+        line_abundances = line_abundances.group_by(["spectrum_filename_stub"])
+
+        for i, group in enumerate(line_abundances.groups):
+
+            # Calculate a weighted mean and variance.
+            # TODO: currently ignoring the covariance between lines.
+            inv_variance = 1.0/(group["e_abundance"]**2)
+            weights = inv_variance/np.sum(inv_variance)
+
+            mu = np.sum(group["abundance"] * weights)
+            sigma = np.sqrt(np.sum(weights**2 * group["e_abundance"]**2))
+
+            # Update the line abundance.
+            assert len(group) == len(set(group["wavelength"]))
+            N_lines = len(set(group["wavelength"]))
+            N_measurements = sum(line_abundances["num_measurements"])
+
+            result = self.insert_spectrum_abundance(element, ion,
+                group["cname"][0], group["spectrum_filename_stub"][0],
+                mu, sigma, N_lines, N_measurements)
+        
+        # TODO: what should we return?
+        # TODO: should we average the abundances from multiple spectra?
+        return None
+
+
+    def insert_line_abundance(self, element, ion, cname, 
+        spectrum_filename_stub, wavelength, abundance, uncertainty,
+        num_measurements, node_bitmask=0):
+        """
+        Update the homogenised line abundance for a given CNAME, species
+        (element and ion), and wavelength.
+
+        :param element:
+            The element name to homogenise.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to homogenise (1 = neutral).
+
+        :type ion:
+            int
+
+        :param cname:
+            The CNAME of the star to perform line abundance homogenisation for.
+
+        :type cname:
+            str
+
+        :param wavelength:
+            The wavelength of the line.
+
+        :type wavelength:
+            float
+
+        :param abundance:
+            The homogenised line abundance.
+
+        :type abundance:
+            float
+
+        :param uncertainty:
+            The uncertainty in the homogenised line abundance.
+
+        :type uncertainty:
+            float
+
+        :param num_measurements:
+            The number of measurements used to produce this line abundance.
+
+        :type num_measurements:
+            int
+        """
+
+        # Does this record already exist? If so remove it.
+        # TODO
+        print("warning not checking for existing entries")
+
+        return self.release.retrieve("""INSERT INTO homogenised_line_abundances
+            (cname, spectrum_filename_stub, wavelength, element, ion, abundance,
+            e_abundance, upper_abundance, num_measurements, node_bitmask)
+            VALUES (%(cname)s, %(spectrum_filename_stub)s, %(wavelength)s,
+            %(element)s, %(ion)s, %(abundance)s, %(e_abundance)s,
+            %(upper_abundance)s, %(num_measurements)s, %(node_bitmask)s)
+            RETURNING id;""", {
+                "spectrum_filename_stub": spectrum_filename_stub,
+                "cname": cname,
+                "wavelength": wavelength,
+                "element": element,
+                "ion": ion,
+                "abundance": abundance,
+                "e_abundance": uncertainty,
+                "upper_abundance": 0, # TODO
+                "num_measurements": num_measurements,
+                "node_bitmask": node_bitmask
+            })[0][0]
+
+
+    def insert_spectrum_abundance(self, element, ion, cname, 
+        spectrum_filename_stub, abundance, uncertainty, num_lines, 
+        num_measurements, **kwargs):
+        """
+        Update the homogenised abundance for a species (element and ion) as 
+        measured in a spectrum (CNAME and spectrum filename stub).
+
+        :param element:
+            The element name to homogenise.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to homogenise (1 = neutral).
+
+        :type ion:
+            int
+
+        :param cname:
+            The CNAME of the star to perform line abundance homogenisation for.
+
+        :type cname:
+            str
+
+        :param spectrum_filename_stub:
+            The spectrum filename stub for the given abundance.
+
+        :type spectrum_filename_stub:
+            str
+
+        :param abundance:
+            The homogenised line abundance.
+
+        :type abundance:
+            float
+
+        :param uncertainty:
+            The uncertainty in the homogenised line abundance.
+
+        :type uncertainty:
+            float
+
+        :param num_lines:
+            The number of transitions used to produce this line abundance.
+
+        :type num_lines:
+            int
+
+        :param num_measurements:
+            The number of measurements (from all nodes and transitions) used to
+            produce this line abundance.
+
+        :type num_measurements:
+            int
+        """
+
+        # Does this record already exist? If so remove it.
+        # TODO
+        print("warning not checking for existing entries")
+
+        return self.release.retrieve("""INSERT INTO homogenised_abundances
+            (cname, spectrum_filename_stub, element, ion, abundance,
+            e_abundance, upper_abundance, num_lines, num_measurements)
+            VALUES (%(cname)s, %(spectrum_filename_stub)s,
+            %(element)s, %(ion)s, %(abundance)s, %(e_abundance)s,
+            %(upper_abundance)s, %(num_lines)s, %(num_measurements)s)
+            RETURNING id;""", {
+                "spectrum_filename_stub": spectrum_filename_stub,
+                "cname": cname,
+                "element": element,
+                "ion": ion,
+                "abundance": abundance,
+                "e_abundance": uncertainty,
+                "num_measurements": num_measurements,
+                "num_lines": num_lines,
+                "upper_abundance": 0, # TODO
+            })[0][0]
+
+
+def _homogenise_spectrum_line_abundances(measurements, rho, nodes, scaled=True,
     **kwargs):
-    """
-    Update the homogenised abundance for a species (element and ion) as measured
-    in a spectrum (CNAME and spectrum filename stub).
-
-    :param database:
-        A PostgreSQL database connection.
-
-    :type database:
-        :class:`~psycopg2.connection`
-
-    :param element:
-        The element name to homogenise.
-
-    :type element:
-        str
-
-    :param ion:
-        The ionisation stage of the element to homogenise (1 = neutral).
-
-    :type ion:
-        int
-
-    :param cname:
-        The CNAME of the star to perform line abundance homogenisation for.
-
-    :type cname:
-        str
-
-    :param spectrum_filename_stub:
-        The spectrum filename stub for the given abundance.
-
-    :type spectrum_filename_stub:
-        str
-
-    :param abundance:
-        The homogenised line abundance.
-
-    :type abundance:
-        float
-
-    :param uncertainty:
-        The uncertainty in the homogenised line abundance.
-
-    :type uncertainty:
-        float
-
-    :param num_lines:
-        The number of transitions used to produce this line abundance.
-
-    :type num_lines:
-        int
-
-    :param num_measurements:
-        The number of measurements (from all nodes and transitions) used to
-        produce this line abundance.
-
-    :type num_measurements:
-        int
-    """
-
-    # Does this record already exist? If so remove it.
-    # TODO
-    print("warning not checking for existing entries")
-
-    return data.retrieve(database, """INSERT INTO homogenised_abundances
-        (cname, spectrum_filename_stub, element, ion, abundance,
-        e_abundance, upper_abundance, num_lines, num_measurements)
-        VALUES (%(cname)s, %(spectrum_filename_stub)s,
-        %(element)s, %(ion)s, %(abundance)s, %(e_abundance)s,
-        %(upper_abundance)s, %(num_lines)s, %(num_measurements)s)
-        RETURNING id;""", {
-            "spectrum_filename_stub": spectrum_filename_stub,
-            "cname": cname,
-            "element": element,
-            "ion": ion,
-            "abundance": abundance,
-            "e_abundance": uncertainty,
-            "num_measurements": num_measurements,
-            "num_lines": num_lines,
-            "upper_abundance": 0, # TODO
-        })[0][0]
-
-
-def update_homogenised_line_abundance(database, element, ion, cname, 
-    spectrum_filename_stub, wavelength, abundance, uncertainty,
-    num_measurements, node_bitmask=0):
-    """
-    Update the homogenised line abundance for a given CNAME, species (element
-    and ion), and wavelength.
-
-    :param database:
-        A PostgreSQL database connection.
-
-    :type database:
-        :class:`~psycopg2.connection`
-
-    :param element:
-        The element name to homogenise.
-
-    :type element:
-        str
-
-    :param ion:
-        The ionisation stage of the element to homogenise (1 = neutral).
-
-    :type ion:
-        int
-
-    :param cname:
-        The CNAME of the star to perform line abundance homogenisation for.
-
-    :type cname:
-        str
-
-    :param wavelength:
-        The wavelength of the line.
-
-    :type wavelength:
-        float
-
-    :param abundance:
-        The homogenised line abundance.
-
-    :type abundance:
-        float
-
-    :param uncertainty:
-        The uncertainty in the homogenised line abundance.
-
-    :type uncertainty:
-        float
-
-    :param num_measurements:
-        The number of measurements used to produce this line abundance.
-
-    :type num_measurements:
-        int
-    """
-
-    # Does this record already exist? If so remove it.
-    # TODO
-    print("warning not checking for existing entries")
-
-    return data.retrieve(database, """INSERT INTO homogenised_line_abundances
-        (cname, spectrum_filename_stub, wavelength, element, ion, abundance,
-        e_abundance, upper_abundance, num_measurements, node_bitmask)
-        VALUES (%(cname)s, %(spectrum_filename_stub)s, %(wavelength)s,
-        %(element)s, %(ion)s, %(abundance)s, %(e_abundance)s,
-        %(upper_abundance)s, %(num_measurements)s, %(node_bitmask)s)
-        RETURNING id;""", {
-            "spectrum_filename_stub": spectrum_filename_stub,
-            "cname": cname,
-            "wavelength": wavelength,
-            "element": element,
-            "ion": ion,
-            "abundance": abundance,
-            "e_abundance": uncertainty,
-            "upper_abundance": 0, # TODO
-            "num_measurements": num_measurements,
-            "node_bitmask": node_bitmask
-        })[0][0]
-
-
-def match_node_line_abundances(database, element, ion, wavelength,
-    column="scaled_abundance", tol=0.1, ignore_gaps=True):
-
-
-    # Data.
-    measurements = data.retrieve_table(database,
-        """SELECT * FROM line_abundances WHERE element = %s AND ion = %s AND
-        flags = 0 AND wavelength >= %s AND wavelength <= %s""",
-        (element, ion, wavelength - tol, wavelength + tol))
-    measurements = measurements.group_by(["spectrum_filename_stub"])
-
-    nodes = sorted(set(measurements["node"]))
-    
-    # Build the matrix.
-    X = np.nan * np.ones((len(nodes), len(measurements.groups)))
-    for j, group in enumerate(measurements.groups):
-        for row in group:
-            X[nodes.index(row["node"]), j] = row[column]
-
-    row_valid = np.all if ignore_gaps else np.any
-    X = X[:, row_valid(np.isfinite(X), axis=0)]    
-    return (np.ma.array(X, mask=~np.isfinite(X)), nodes)
-
-
-def _homogenise_spectrum_line_abundances(database, element, ion, measurements,
-    rho, nodes, scaled=True, **kwargs):
 
     # Note that by default we use scaled_abundance, not abundance, such that we
     # can apply any offsets or scaling as necessary *before* the homogenisation
@@ -237,7 +393,7 @@ def _homogenise_spectrum_line_abundances(database, element, ion, measurements,
     u_abundance[bad_values] = np.nanmean(u_abundance[~bad_values])
     if not np.any(np.isfinite(u_abundance)):
         logger.warn("Setting 0.2 dex uncertainty for {0} {1} line at {2}".format(
-            element, ion, measurements["wavelength"][0]))
+            None, None, measurements["wavelength"][0]))
         u_abundance[:] = 0.2
 
     N = mask.sum()
@@ -261,258 +417,4 @@ def _homogenise_spectrum_line_abundances(database, element, ion, measurements,
     assert np.isfinite(abundance_mean * abundance_sigma)
 
     # Place this information in the homogenised abundance table.
-    unique_id = update_homogenised_line_abundance(database, element, ion,
-        measurements["cname"][0], measurements["spectrum_filename_stub"][0],
-        measurements["wavelength"][0], abundance_mean, abundance_sigma, N)
-    
-    return (abundance_mean, abundance_sigma, N, unique_id)
-
-
-def line_abundances(database, element, ion, cname, wavelength,
-    rho, nodes, wavelength_tolerance=0.1, **kwargs):
-    """
-    Homogenise the line abundances for a given element, ion, star and wavelength
-    (within some tolerance).
-
-    :param database:
-        A PostgreSQL database connection.
-
-    :type database:
-        :class:`~psycopg2.connection`
-
-    :param element:
-        The element name to homogenise.
-
-    :type element:
-        str
-
-    :param ion:
-        The ionisation stage of the element to homogenise (1 = neutral).
-
-    :type ion:
-        int
-
-    :param cname:
-        The CNAME of the star to perform line abundance homogenisation for.
-
-    :type cname:
-        str
-
-    :param wavelength:
-        The wavelength of the line to homogenise abundances for.
-
-    :type wavelength:
-        float
-
-    :param rho:
-        The node-to-node correlation coefficients for this species.
-
-    :type rho:
-        :class:`~np.array`
-
-    :param wavelength_tolerance: [optional]
-        The acceptable tolerance in wavelength for this element and ion.
-
-    :type wavelength_tolerance:
-        float
-    """
-
-    # Get all valid line abundances for this element, ion, cname.
-    wavelength_tolerance = abs(wavelength_tolerance)
-    if wavelength_tolerance > 0:   
-        measurements = data.retrieve_table(database, """SELECT * 
-            FROM line_abundances
-            WHERE element = %s AND ion = %s AND cname = %s AND flags = 0
-            AND wavelength >= %s AND wavelength <= %s ORDER BY node ASC""",
-            (element, ion, cname, wavelength - wavelength_tolerance,
-                wavelength + wavelength_tolerance))
-    else:
-        measurements = data.retrieve_table(database, """SELECT *
-            FROM line_abundances WHERE element = %s AND ion = %s AND cname = %s
-            AND flags = 0 AND wavelength = %s ORDER BY node ASC""",
-            (element, ion, cname, wavelength))
-
-    if measurements is None: return
-    
-    # Account for repeat spectra for a single star.
-    results = {}
-    measurements = measurements.group_by(["spectrum_filename_stub"])
-    for i, group in enumerate(measurements.groups):
-        stub = group["spectrum_filename_stub"][0]
-        results[stub] = _homogenise_spectrum_line_abundances(database, element,
-            ion, group, rho, nodes, **kwargs)
-
-    return results
-
-
-def average_abundances(database, element, ion, cname):
-    """
-    Average the homogenised line abundances for a given star.
-    """
-    # TODO DOCO
-
-    column, e_column = "abundance", "e_abundance"
-
-    # Get the data for this star/spectrum filename stub.
-    line_abundances = data.retrieve_table(database,
-        """SELECT * FROM homogenised_line_abundances WHERE element = %s
-        AND ion = %s AND cname = %s""", (element, ion, cname))
-
-    if line_abundances is None:
-        # No line abundances, so nothing to do.
-        return None
-
-    line_abundances = line_abundances.group_by(["spectrum_filename_stub"])
-    for i, group in enumerate(line_abundances.groups):
-
-        # Calculate a weighted mean and variance.
-        # TODO: currently ignoring the covariance between lines.
-        inv_variance = 1.0/(group[e_column]**2)
-        weights = inv_variance/np.sum(inv_variance)
-
-        mu = np.sum(group[column] * weights)
-        sigma = np.sqrt(np.sum(weights**2 * group[e_column]**2))
-
-        # Update the line abundance.
-        assert len(group) == len(set(group["wavelength"]))
-        N_lines = len(set(group["wavelength"]))
-        N_measurements = sum(line_abundances["num_measurements"])
-
-        result = update_homogenised_abundance(database, element, ion,
-            group["cname"][0], group["spectrum_filename_stub"][0],
-            mu, sigma, N_lines, N_measurements)
-    
-    # TODO: what should we return?
-    # TODO: should we average the abundances from multiple spectra?
-    return None
-
-
-def species(database, element, ion, **kwargs):
-    """
-    Homogenise the line abundances for all stars for a given element and ion.
-
-    :param database:
-        A PostgreSQL database connection.
-
-    :type database:
-        :class:`~psycopg2.connection`
-
-    :param element:
-        The element name to homogenise.
-
-    :type element:
-        str
-
-    :param ion:
-        The ionisation stage of the element to homogenise (1 = neutral).
-
-    :type ion:
-        int
-    """
-
-    # Remove any existing homogenised line or average abundances.
-    data.execute(database, """DELETE FROM homogenised_line_abundances
-        WHERE element = %s AND ion = %s""", (element, ion))
-    data.execute(database, """DELETE from homogenised_abundances
-        WHERE element = %s AND ion = %s""", (element, ion))
-    database.commit()
-
-    # Get the unique wavelengths.
-    wavelengths = data.retrieve_column(database,
-        """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances WHERE
-        element = %s AND ion = %s AND flags = 0 ORDER BY wavelength ASC""",
-        (element, ion), asarray=True)
-    decimals = kwargs.pop("round_wavelengths", 1)
-    if decimals >= 0: np.round(wavelengths, decimals, out=wavelengths)
-
-    # Get the unique CNAMEs.
-    cnames = data.retrieve_column(database,
-        """SELECT DISTINCT ON (cname) cname FROM line_abundances
-        WHERE element = %s AND ion = %s ORDER BY cname ASC""", (element, ion))
-
-    # For each wavelength, approximate the covariance matrix then homogenise
-    # this wavelength for all cnames.
-    t_init = time()
-    for i, wavelength in enumerate(set(wavelengths)):
-        # Calculate the correlation coefficients for this line.
-        X, nodes = match_node_line_abundances(database, element, ion, wavelength,
-            **kwargs)
-        rho = np.atleast_2d(np.corrcoef(X))
-
-        # For each cname, homogenise this line.
-        for j, cname in enumerate(cnames):
-            line_abundances(database, element, ion, cname,
-                wavelength, rho, nodes, **kwargs)
-
-    # Need to commit before we can do the averaged results per star.
-    database.commit()
-
-    for j, cname in enumerate(cnames):
-        average_abundances(database, element, ion, cname, **kwargs)
-
-    database.commit()
-
-    # TODO what should we return?
-    return None
-
-    
-    
-
-
-if __name__ == "__main__":
-
-    import os
-    kwds = {
-        "host": "/tmp/",
-        "dbname": "arc",
-        "user": "arc",
-        "password": os.environ.get('PSQL_PW', None)
-    }
-
-
-    import psycopg2 as pg
-    database = pg.connect(**kwds)
-
-    import flags
-
-    """
-    flags.create_line_abundance_flag(database, "line abundance is unphysically high")
-    flags.create_line_abundance_flag(database, "i haven't had coffee yet")
-    flags.create_line_abundance_flag(database, "my wallet is missing")
-    flags.create_line_abundance_flag(database, "i love coffee yet")
-
-
-    moo = flags.search_line_abundance_flags(database, "coffee")
-    for k in moo:
-        assert flags.flag_exists(database, int(k))
-
-
-    flags.update_line_abundance_flag(database, [1, 2, 3], "id IN %s", (1, 2, 3, 4))
-    
-    """
-
-    # It should always be that we do the following:
-
-    # [ ] Mark line abundances that are obviously incorrect and should be removed
-    # [ ] Calculate and apply any line/node-specific biases to the distributions
-    # [X] The line abundances should be able to be homogenised per star/cname in
-    #     this file.
-    #
-
-    # That means we need to be able to:
-    # [X] Select line abundances based on any constraints.
-    # [ ] Mark line abundances with some flag, with any constraints.
-    # [X] Give multiple flags for lines.
-
-    # [ ] Calculate and apply any line/node-specific biases to the distributions
-    #     (this should only use abundances that are not marked)
-
-    # The homogenised thing should just ignore anything with a mark > 0
-
-
-
-    species(database, "Si", 2)
-
-
-    raise a
-
+    return (abundance_mean, abundance_sigma, N)
