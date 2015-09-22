@@ -34,21 +34,23 @@ def calculate_differential_abundances(X, full_output=True):
 
 
 def match_node_abundances(database, element, ion, additional_columns=None,
-    **kwargs):
+    scaled=False, ignore_flags=True, **kwargs):
     """
     Return an array of matched-abundances.
     """
 
+    column = "scaled_abundance" if scaled else "abundance"
+    _ = "AND flags = 0" if not ignore_flags else ""
     if additional_columns is None: 
         data = retrieve_table(database,
             """SELECT * FROM line_abundances WHERE element = %s AND ion = %s
-            ORDER BY node ASC""", (element, ion))
+            """ + _ + """ORDER BY node ASC""", (element, ion))
     else:
         # Match each star to the first distinct entry in the node_results table
         data = retrieve_table(database,
             """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
                 cname, """ + ", ".join(additional_columns) + """ FROM node_results ORDER BY cname) n 
-                ON (l.element = %s AND l.ion = %s AND l.cname = n.cname)""",
+                ON (l.element = %s AND l.ion = %s AND l.cname = n.cname """ + _ + ")",
                 (element, ion)) # TODO NAUGHTY
 
     data["wavelength"] \
@@ -68,7 +70,7 @@ def match_node_abundances(database, element, ion, additional_columns=None,
         print("matching", i, len(data.groups))
         for entry in group:
             j = nodes.index(entry["node"])
-            X[i, j] = entry["abundance"]
+            X[i, j] = entry[column]
 
     # Return other parameters for each group.
 
@@ -1138,7 +1140,8 @@ def differential_line_abundances_wrt_x(database, element, ion, parameter,
 
 
 def differential_line_abundances(database, element, ion, bins=50, 
-    absolute_extent=None, differential_extent=(-0.5, 0.5), **kwargs):
+    absolute_extent=None, differential_extent=(-0.5, 0.5), scaled=False,
+    ignore_flags=True, **kwargs):
     """
     Show histograms of the absolute and differential line abundances for a given
     element and ion.
@@ -1159,11 +1162,20 @@ def differential_line_abundances(database, element, ion, bins=50,
         int
     """
 
+    column = "scaled_abundance" if scaled else "abundance"
+
     # Get all of the unique lines.
-    data = retrieve_table(database, 
-        """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
-        WHERE element = %s AND ion = %s ORDER BY wavelength ASC""",
-        (element, ion))
+    if ignore_flags:
+        data = retrieve_table(database, 
+            """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
+            WHERE element = %s AND ion = %s ORDER BY wavelength ASC""",
+            (element, ion))
+    else:
+        data = retrieve_table(database,
+             """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
+            WHERE element = %s AND ion = %s AND flags = 0 ORDER BY wavelength ASC""",
+            (element, ion))
+    
     if data is None: return
 
     __round_wavelengths = kwargs.pop("__round_wavelengths", 1)
@@ -1198,11 +1210,11 @@ def differential_line_abundances(database, element, ion, bins=50,
     data["wavelength"] = np.round(data["wavelength"], __round_wavelengths)
     
     # Use only finite measurements.
-    use = np.isfinite(data["abundance"]) * (data["upper_abundance"] == 0)
+    use = np.isfinite(data[column]) * (data["upper_abundance"] == 0)
     data = data[use]
 
     bin_min, bin_max = absolute_extent \
-        or (data["abundance"].min(), data["abundance"].max())
+        or (data[column].min(), data[column].max())
    
     if abs(bin_min - bin_max) < 0.005:
         value = bin_min
@@ -1221,11 +1233,11 @@ def differential_line_abundances(database, element, ion, bins=50,
         print("Doing axes 1", i)
 
         # Show the full distribution.
-        ax.hist(data["abundance"], color=full_distribution_color, **hist_kwds)
+        ax.hist(data[column], color=full_distribution_color, **hist_kwds)
 
         # Show the distribution for this wavelength.
         match = data["wavelength"] == wavelength
-        ax.hist(data["abundance"][match], color=comp_distribution_color, **hist_kwds)
+        ax.hist(data[column][match], color=comp_distribution_color, **hist_kwds)
 
         ax.xaxis.set_major_locator(MaxNLocator(5))
         ax.yaxis.set_major_locator(MaxNLocator(5))
@@ -1246,7 +1258,8 @@ def differential_line_abundances(database, element, ion, bins=50,
 
     # Plot the full distribution of differential abundances.
     # (but first,..) determine the full matrix of differential abundances.
-    X, nodes, diff_data = match_node_abundances(database, element, ion)
+    X, nodes, diff_data = match_node_abundances(database, element, ion,
+        scaled=scaled, ignore_flags=ignore_flags)
 
     # Calculate the full differential abundances.
     X_diff, indices = calculate_differential_abundances(X, full_output=True)
@@ -1938,8 +1951,24 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
                         transform=ax.transAxes, horizontalalignment="left",
                         verticalalignment="top")
 
-            if node not in nodes: continue
+            ax.axhline(0, c="k", zorder=0)
+            # TODO: Show uncertainty in each benchmark?
 
+            if ax.is_first_col():
+                ax.set_ylabel(r"$\Delta\log_{\epsilon}({\rm X})$")
+            else:
+                ax.set_yticklabels([])
+
+            ax.set_xlim(0, len(benchmarks))
+            ax.set_xticks(0.5 + np.arange(len(benchmarks)))
+            if ax.is_last_row():
+                ax.set_xticklabels([benchmark.name for benchmark in benchmarks],
+                    rotation=90)
+            else:
+                ax.set_xticklabels([])
+
+            if node not in nodes:
+                continue
 
             # Keep nodes slightly offset from each otgher so we can still see
             # them all.
@@ -1968,21 +1997,6 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
             ax.axhline(mean, c=color, lw=2, zorder=-1, label=node.strip())
 
 
-            ax.axhline(0, c="k", zorder=0)
-            # TODO: Show uncertainty in each benchmark?
-
-            if ax.is_first_col():
-                ax.set_ylabel(r"$\Delta\log_{\epsilon}({\rm X})$")
-            else:
-                ax.set_yticklabels([])
-
-            ax.set_xlim(0, len(benchmarks))
-            ax.set_xticks(0.5 + np.arange(len(benchmarks)))
-            if ax.is_last_row():
-                ax.set_xticklabels([benchmark.name for benchmark in benchmarks],
-                    rotation=90)
-            else:
-                ax.set_xticklabels([])
 
     # Common y-axis limits.
     if extent is None:
