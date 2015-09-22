@@ -1651,7 +1651,7 @@ def percentiles(database, element, ion, bins=20, **kwargs):
     cmap_indices = np.linspace(0, 1, N_nodes)
 
     if isinstance(bins, int): bins = np.linspace(0, 100, bins + 1)
-    kwds = { "bins": bins, "histtype": "step", "lw": 2 }
+    kwds = { "bins": bins, "histtype": "step", "lw": 2, "normed": True }
     kwds.update(kwargs)
     
     for i, (ax, wavelength) in enumerate(zip(axes, wavelengths)):
@@ -1685,7 +1685,11 @@ def percentiles(database, element, ion, bins=20, **kwargs):
     axes[0].legend(*_.get_legend_handles_labels(), loc="upper left",
         frameon=False, fontsize=14)
 
-    fig.tight_layout()
+    try:
+        fig.tight_layout()
+    except AttributeError:
+        None
+
     #fig.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.95,
     #    wspace=0.15, hspace=0.20)
     
@@ -1808,6 +1812,8 @@ def compare_benchmarks(database, element, ion, benchmarks_filename, bins=20,
     # Load the unique benchmarks, and get data for each one.
     figures = {}
     for benchmark in load_benchmarks(benchmarks_filename):
+
+        if element not in benchmark.abundances: continue
 
         measurements = data.retrieve_table(database,
             """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
@@ -1933,10 +1939,11 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
         for k, (ax, node) in enumerate(zip(ax_group, all_nodes)):
             if ax.is_first_row():
                 ax.set_title(node)
-                if ax.is_first_col():
-                    ax.text(0.05, 0.95, r"${0}$".format(wavelength),
-                        transform=ax.transAxes, horizontalalignment="left",
-                        verticalalignment="top")
+
+            if ax.is_first_col():
+                ax.text(0.05, 0.95, r"${0}$".format(wavelength),
+                    transform=ax.transAxes, horizontalalignment="left",
+                    verticalalignment="top")
 
             if node not in nodes: continue
 
@@ -1994,8 +2001,7 @@ def benchmark_line_abundances(database, element, ion, benchmark_filename,
         # Mark how many lines are out of the frame.
 
     fig.tight_layout()
-
-    raise a
+    return fig
 
 
 
