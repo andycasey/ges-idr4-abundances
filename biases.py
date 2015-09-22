@@ -171,7 +171,7 @@ def apply_offset(database, element, ion, node, wavelength, offset,
         AND node ILIKE '{2}%' AND wavelength > '{3}' AND wavelength < '{4}'"""\
         .format(element, ion, node, wavelength - wavelength_tolerance,
             wavelength + wavelength_tolerance), asarray=True)
-    if ids is None: return 0
+    if len(ids) == 0: return 0
 
     # Apply the offset.
     rows = data.update(database,
