@@ -7,7 +7,71 @@ from __future__ import division, absolute_import, print_function
 
 __author__ = "Andy Casey <arc@ast.cam.ac.uk>"
 
+from itertools import combinations
 import numpy as np
+
+import data
+
+
+def calculate_differential_abundances(X, full_output=True):
+    N_entries, N_nodes = X.shape
+    assert 30 > N_nodes, "Are you sure you gave X the right way around?"
+    c = list(combinations(range(N_nodes), 2))
+    Z = np.vstack([X[:, a] - X[:, b] for a, b in c]).T
+    if full_output:
+        return (Z, c)
+
+    return Z
+
+
+
+
+def match_node_abundances(database, element, ion, additional_columns=None,
+    scaled=False, ignore_flags=True, **kwargs):
+    """
+    Return an array of matched-abundances.
+    """
+
+    column = "scaled_abundance" if scaled else "abundance"
+    _ = "AND flags = 0" if not ignore_flags else ""
+    if additional_columns is None: 
+        measurements = data.retrieve_table(database,
+            """SELECT * FROM line_abundances WHERE element = %s AND ion = %s
+            """ + _ + """ORDER BY node ASC""", (element, ion))
+    else:
+        # Match each star to the first distinct entry in the node_results table
+        measurements = data.retrieve_table(database,
+            """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
+                cname, """ + ", ".join(additional_columns) + """ FROM node_results ORDER BY cname) n 
+                ON (l.element = %s AND l.ion = %s AND l.cname = n.cname """ + _ + ")",
+                (element, ion)) # TODO NAUGHTY
+
+    measurements["wavelength"] \
+        = np.round(measurements["wavelength"], kwargs.pop("__round_wavelengths", 1))
+
+    nodes = sorted(set(measurements["node"]))
+    unique_wavelengths = sorted(set(measurements["wavelength"]))
+
+    # Group measurements by spectrum_filename_stub and wavelength
+    measurements = measurements.group_by(["wavelength", "spectrum_filename_stub"])
+
+    # Each group should contain at most N_node entries.
+    assert len(nodes) >= np.diff(measurements.groups.indices).max()
+
+    X = np.nan * np.ones((len(measurements.groups), len(nodes)))
+    for i, group in enumerate(measurements.groups):
+        print("matching", i, len(measurements.groups))
+        for entry in group:
+            j = nodes.index(entry["node"])
+            X[i, j] = entry[column]
+
+    # Return other parameters for each group.
+
+    corresponding_data = measurements[measurements.groups.indices[:-1]]
+
+    return (X, nodes, corresponding_data)
+
+
 
 
 def solar_abundance(elements):
