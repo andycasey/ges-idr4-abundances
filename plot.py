@@ -857,12 +857,13 @@ def individual_line_abundance_differences(database, element, ion, node,
     fig, axes = plt.subplots(N_nodes, N_lines, figsize=(2 + 7*N_lines, 0.5 + 2*N_nodes))
 
     for i, wavelength in enumerate(unique_wavelengths):
+
+        wavelength_match = comparison_data["wavelength"] == wavelength
         for j, comparison_node in enumerate(comparison_nodes):
             print(i, j)
             ax = axes[j, i]
 
-            idx = (comparison_data["node"] == comparison_node) \
-                * (comparison_data["wavelength"] == wavelength)
+            idx = (comparison_data["node"] == comparison_node) * wavelength_match
             
             # Match by CNAME.
             node_abundance = node_data["abundance"]
