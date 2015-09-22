@@ -1,5 +1,5 @@
 
-''' Produce ensemble Si 2 abundances from the Gaia-ESO Survey iDR4 WG11 data '''
+''' Produce ensemble Si 1 abundances from the Gaia-ESO Survey iDR4 WG11 data '''
 
 __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
@@ -16,7 +16,7 @@ kwds = {
 
 db = pg.connect(**kwds)
 
-element, ion = ("Si", 2)
+element, ion = ("Si", 1)
 
 # Flag any lines that should be discarded, from specific nodes?
 flag_id = flags.retrieve_or_create_line_abundance_flag(db,
@@ -44,13 +44,18 @@ for node in solar_biases:
 # Produce some figures.
 import plot
 
-fig = plot.differential_line_abundances(db, element, ion, scaled=True,
-    ignore_flags=True)
+#fig = plot.differential_line_abundances(db, element, ion, scaled=True,
+#    ignore_flags=True)
 
+#raise a
 
 # Perform the homogenisation.
-result = homogenise.species(db, element, ion)
+from time import time
+t = time()
 
+result = homogenise.species(db, element, ion)
+taken = time() - t
+raise a
 # Produce comparison figures.
 
 # - node-to-node scatter plot

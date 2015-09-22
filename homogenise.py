@@ -410,6 +410,13 @@ def species(database, element, ion, **kwargs):
         int
     """
 
+    # Remove any existing homogenised line or average abundances.
+    data.execute(database, """DELETE FROM homogenised_line_abundances
+        WHERE element = %s AND ion = %s""", (element, ion))
+    data.execute(database, """DELETE from homogenised_abundances
+        WHERE element = %s AND ion = %s""", (element, ion))
+    database.commit()
+
     # Get the unique wavelengths.
     wavelengths = data.retrieve_column(database,
         """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances WHERE
@@ -430,7 +437,7 @@ def species(database, element, ion, **kwargs):
         # Calculate the correlation coefficients for this line.
         X, nodes = match_node_line_abundances(database, element, ion, wavelength,
             **kwargs)
-        rho = np.corrcoef(X)
+        rho = np.atleast_2d(np.corrcoef(X))
 
         # For each cname, homogenise this line.
         for j, cname in enumerate(cnames):
