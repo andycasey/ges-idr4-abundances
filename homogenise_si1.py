@@ -49,30 +49,7 @@ fig = plot.compare_solar(db, element, ion, scaled=True, ignore_flags=False)
 fig.savefig("figures/{0}{1}/scaled-compare-solar.png".format(element.upper(),
     ion))
 
-raise a
-
 # Perform the homogenisation.
 result = homogenise.species(db, element, ion)
 
 
-
-#fig = plot.differential_line_abundances(db, element, ion, scaled=True,
-#    ignore_flags=True)
-
-#raise a
-
-# Perform the homogenisation.
-from time import time
-t = time()
-
-result = homogenise.species(db, element, ion)
-taken = time() - t
-raise a
-# Produce comparison figures.
-
-# - node-to-node scatter plot
-# - benchmark comparison
-# - bensby comparison
-# - 
-
-raise a 
