@@ -5,6 +5,7 @@
 import os
 import psycopg2 as pg
 import plot
+from glob import glob
 
 import matplotlib.pyplot as plt
 
@@ -41,6 +42,19 @@ def make_figures(figures, database, element, ion, format="png"):
                 fig.savefig(filename)
                 print("Created {}".format(filename))
 
+    # Create an all.html
+    filenames = glob("{0}/*.{1}".format(directory, format))
+    html = "<html><body>"
+    for filename in filenames:
+        html += "{0}: <a href=\"{0}\"><img src=\"{0}\" /></a><br />".format(
+            os.path.basename(filename))
+
+    html += "</body></html>"
+    with open("{0}/all.html".format(directory), "w") as fp:
+        fp.write(html)
+
+
+
 
 if __name__ == "__main__":
 
@@ -50,29 +64,29 @@ if __name__ == "__main__":
     
 
     species = [
+        #("Si", 2, (5, 10)), # Done
         ("Si", 1, (5, 10)), # Done
-        ("Si", 2, (5, 10)), # Done
         ("Al", 1, (3, 7.5)),
         ("Al", 3, (3, 7.5)),
-        ("Na", 1, None),
+        ("Na", 1, (2.5, 7.5)),
         ("S", 1, None),
         ("S", 2, None),
         ("S", 3, None),
         ("Ne", 1, None),
         ("Ne", 2, None),
         
-        ("Mg", 1, None),
-        ("Ca", 1, None),
-        ("Ca", 2, None),
+        ("Mg", 1, (5, 9)),
+        ("Ca", 1, (3.5, 8)),
+        ("Ca", 2, (3.5, 8)),
 
-        ("Ni", 1, None),
-        ("Zn", 1, None),
-        ("Cr", 1, None),
-        ("Cr", 2, None),
-        ("Sc", 1, None),
-        ("Sc", 2, None),
-        ("Cu", 1, None),
-        ("Co", 1, None),
+        ("Ni", 1, (3, 10)),
+        ("Zn", 1, (2, 7)),
+        ("Cr", 1, (0, 10)),
+        ("Cr", 2, (0, 10)),
+        ("Sc", 1, (0, 6)),
+        ("Sc", 2, (0, 6)),
+        ("Cu", 1, (1, 6)),
+        ("Co", 1, (0, 6)),
         ("Mn", 1, None),
         ("Zr", 1, None),
         ("Zr", 2, None),
@@ -128,16 +142,6 @@ if __name__ == "__main__":
             ("differential-line-abundances", plot.differential_line_abundances),
             ("differential-line-abundances-clipped", (
                 plot.differential_line_abundances, { "absolute_extent": absolute_extent })),
-
-            ("differential-line-abundances-wrt-teff", (
-                plot.differential_line_abundances_wrt_x,
-                { "parameter": "teff", "x_extent": (3500, 7000) })),
-            ("differential-line-abundances-wrt-logg", (
-                plot.differential_line_abundances_wrt_x,
-                { "parameter": "logg", "x_extent": (0, 5) })),
-            ("differential-line-abundances-wrt-feh", (
-                plot.differential_line_abundances_wrt_x,
-                { "parameter": "feh", "x_extent": (-3, 0.5) })),
             ("line-abundances-logx-wrt-teff", (plot.line_abundances, {
                 "reference_column": "teff",
                 "abundance_format": "log_x",
@@ -204,26 +208,6 @@ if __name__ == "__main__":
                 "abundance_format": "x_fe",
                 "reference_column": "feh", "aux_column": "teff",
                 "aux_extent": (3500, 7000) })),
-
-            ("abundance-heatmap", (plot.transition_heatmap, {"column": "abundance"})),
-            ("ew-heatmap", (plot.transition_heatmap, {"column": "ew"})),
-            #"abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
-            #"ew-covariance": (plot.transition_covariance, {"column": "ew"}),
-            ("mean-abundance-sp", plot.mean_abundance_against_stellar_parameters),
-            ("mean-abundance-differences", (plot.mean_abundance_differences, {
-                "extent": absolute_extent })),
-            ("line-abundances-rew", (plot.all_node_individual_line_abundance_differences,
-                {"rew_on_x_axis": True})),
-            ("line-abundances", (plot.all_node_individual_line_abundance_differences,
-                {"rew_on_x_axis": False})),
-            ("line-abundances-rew-clip", (plot.all_node_individual_line_abundance_differences,
-                {"rew_on_x_axis": True, "x_extent": (-6.5, -4), "y_extent": (-1.5, 1.5), "vmin": 6, "vmax": 9})),
-            ("line-abundances-clip", (plot.all_node_individual_line_abundance_differences,
-                {"rew_on_x_axis": False, "x_extent": absolute_extent, "y_extent": (-1.5, 1.5)})),    
-        ])
-
-        
-        figures = OrderedDict([
             ("differential-line-abundances-wrt-teff", (
                 plot.differential_line_abundances_wrt_x,
                 { "parameter": "teff", "x_extent": (3500, 7000) })),
@@ -233,14 +217,24 @@ if __name__ == "__main__":
             ("differential-line-abundances-wrt-feh", (
                 plot.differential_line_abundances_wrt_x,
                 { "parameter": "feh", "x_extent": (-3, 0.5) })),
-
+            ("abundance-heatmap", (plot.transition_heatmap, {"column": "abundance"})),
+            ("ew-heatmap", (plot.transition_heatmap, {"column": "ew"})),
+            #"abundance-covariance": (plot.transition_covariance, {"column": "abundance"}),
+            #"ew-covariance": (plot.transition_covariance, {"column": "ew"}),
+            ("mean-abundance-sp", plot.mean_abundance_against_stellar_parameters),
+            ("mean-abundance-differences", (plot.mean_abundance_differences, {
+                "extent": absolute_extent })),
+            ("line-abundances-rew", (plot.all_node_individual_line_abundance_differences,
+                {"rew_on_x_axis": True, "x_extent": (-7, -4.5) })),
+            ("line-abundances", (plot.all_node_individual_line_abundance_differences,
+                {"rew_on_x_axis": False})),
+            ("line-abundances-rew-clip", (plot.all_node_individual_line_abundance_differences,
+                {"rew_on_x_axis": True, "x_extent": (-7, -4.5), "y_extent": (-1.5, 1.5), "vmin": 6, "vmax": 9})),
+            ("line-abundances-clip", (plot.all_node_individual_line_abundance_differences,
+                {"rew_on_x_axis": False, "x_extent": absolute_extent, "y_extent": (-1.5, 1.5)})),    
         ])
 
-
-        figures = OrderedDict([
-            ("differential-line-abundances", plot.differential_line_abundances),
-        ])
-
+        
         try:
             make_figures(figures, database, element, ion)
         except:
