@@ -388,7 +388,8 @@ def compare_m67_twin(database, element, ion, bins=20, extent=None, **kwargs):
 
 
 
-def compare_solar(database, element, ion, bins=20, extent=None, **kwargs):
+def compare_solar(database, element, ion, scaled=False, ignore_flags=True,
+        bins=20, extent=None, **kwargs):
     """
     Show the distributions of abundances for each node, each line, just for the
     solar spectra.
@@ -399,16 +400,17 @@ def compare_solar(database, element, ion, bins=20, extent=None, **kwargs):
     data = retrieve_table(database, """SELECT * FROM line_abundances l JOIN
         (SELECT DISTINCT ON (cname) cname, snr FROM node_results ORDER BY cname)
         n ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
-            AND l.cname LIKE 'ssssss%')""".format(element, ion)) # Naughty.
+            AND l.cname LIKE 'ssssss%' {2})""".format(element, ion,
+            "AND l.flags = 0" if not ignore_flags else "")) # Naughty.
 
-    return _compare_abundances_from_repeat_spectra(data, element, ion, bins=bins,
-        extent=extent, reference_label="Solar",
+    return _compare_abundances_from_repeat_spectra(data, element, ion, 
+        scaled=scaled, bins=bins, extent=extent, reference_label="Solar",
         reference_abundance=utils.solar_abundance(element), **kwargs)
 
 
 
 def _compare_abundances_from_repeat_spectra(data, element, ion, reference_label,
-    reference_abundance, reference_uncertainty=None, bins=20, extent=None,
+    reference_abundance, reference_uncertainty=None, scaled=False, bins=20, extent=None,
     **kwargs):
 
     # Get the unique nodes and wavelengths.
@@ -417,11 +419,13 @@ def _compare_abundances_from_repeat_spectra(data, element, ion, reference_label,
     nodes, wavelengths = [sorted(set(data[_])) for _ in ("node", "wavelength")]
     N_nodes, N_wavelengths = map(len, (nodes, wavelengths))
 
+    column = "scaled_abundance" if scaled else "abundance"
+
     # Create the figures
     cmap = kwargs.pop("cmap", plt.cm.Paired)
     cmap_indices = np.linspace(0, 1, N_nodes)
     bin_min, bin_max = \
-        extent or (np.nanmin(data["abundance"]), np.nanmax(data["abundance"]))
+        extent or (np.nanmin(data[column]), np.nanmax(data[column]))
 
     if reference_abundance is not None:
         if reference_abundance > bin_max:
@@ -471,17 +475,17 @@ def _compare_abundances_from_repeat_spectra(data, element, ion, reference_label,
     for i, (wavelength, (ax_hist, ax_snr)) in enumerate(zip(wavelengths, axes)):
 
         # Show the normalised distribution of absolute abundances from all nodes
-        ok = (data["wavelength"] == wavelength) * np.isfinite(data["abundance"])
+        ok = (data["wavelength"] == wavelength) * np.isfinite(data[column])
         if ok.sum() > 0:
-            ax_hist.hist(np.array(data["abundance"][ok]), color="k", **hist_kwds)
+            ax_hist.hist(np.array(data[column][ok]), color="k", **hist_kwds)
         ax_hist.plot([], [], color="k", label="All nodes")
         ax_hist.set_title(wavelength)
 
         # For each node, show the histogram of absolute abundances.
         for j, node in enumerate(nodes):
             node_match = ok * (data["node"] == node)
-            if np.any(np.isfinite(data["abundance"][node_match])):
-                ax_hist.hist(data["abundance"][node_match],
+            if np.any(np.isfinite(data[column][node_match])):
+                ax_hist.hist(data[column][node_match],
                     color=cmap(cmap_indices[j]), **hist_kwds)
 
             # For the legend.
@@ -492,7 +496,7 @@ def _compare_abundances_from_repeat_spectra(data, element, ion, reference_label,
             node_match = ok * (data["node"] == node)
 
             c = cmap(cmap_indices[j])
-            x, y = data["snr"][node_match], data["abundance"][node_match]
+            x, y = data["snr"][node_match], data[column][node_match]
             ax_snr.errorbar(x, y, yerr=data["e_abundance"][node_match], lc="k",
                 ecolor="k", aa=True, fmt=None, mec="k", mfc="w", ms=6, zorder=1)
             ax_snr.scatter(x, y, facecolor=c, **scatter_kwds)
@@ -799,7 +803,7 @@ def all_node_individual_line_abundance_differences(database, element, ion,
 
 
 def individual_line_abundance_differences(database, element, ion, node,
-    ew_node="EPINARBO  ", rew_on_x_axis=False, x_extent=None, y_extent=None,
+    ew_node="ULB       ", rew_on_x_axis=False, x_extent=None, y_extent=None,
     **kwargs):
     """
     Show how one node compares to all other nodes for individual abundances
@@ -1204,9 +1208,15 @@ def differential_line_abundances(database, element, ion, bins=50,
 
     # Plot the full distribution of abundances, and the contributions from
     # individual lines.
-    data = retrieve_table(database,
-        "SELECT * FROM line_abundances WHERE element = %s AND ion = %s",
-        (element, ion))
+    if ignore_flags:
+        data = retrieve_table(database,
+            "SELECT * FROM line_abundances WHERE element = %s AND ion = %s",
+            (element, ion))
+    else:
+        data = retrieve_table(database,
+            "SELECT * FROM line_abundances WHERE element = %s AND ion = %s AND flags = 0",
+            (element, ion))
+
     data["wavelength"] = np.round(data["wavelength"], __round_wavelengths)
     
     # Use only finite measurements.
@@ -1372,7 +1382,7 @@ def differential_line_abundances(database, element, ion, bins=50,
 
 
 def line_abundances(database, element, ion, reference_column, aux_column=None,
-    extent=None, show_node_comparison=True, show_line_comparison=True, uncertainties=False,
+    x_extent=None, y_extent=None, show_node_comparison=True, show_line_comparison=True, uncertainties=False,
     abundance_format="x_fe", **kwargs):
     """
     Show the reference and relative abundances for a given element and ion
@@ -1568,8 +1578,8 @@ def line_abundances(database, element, ion, reference_column, aux_column=None,
         if proposed_y_limits[1] > y_limits[1]:
             y_limits[1] = proposed_y_limits[1]
 
-    y_limits = extent or y_limits
-
+    y_limits = y_extent or y_limits
+    x_limits = x_extent or x_limits
     for ax in axes.flatten():
         ax.set_xlim(x_limits)
         ax.set_ylim(y_limits)

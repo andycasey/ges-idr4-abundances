@@ -4,7 +4,7 @@
 __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
 import psycopg2 as pg
-import biases, flags, homogenise
+import biases, flags, homogenise, plot
 
 
 kwds = {
@@ -17,6 +17,7 @@ kwds = {
 db = pg.connect(**kwds)
 
 element, ion = ("Si", 2)
+raise a
 
 # Flag any lines that should be discarded, from specific nodes?
 flag_id = flags.retrieve_or_create_line_abundance_flag(db,
@@ -31,22 +32,23 @@ flag_id = flags.retrieve_or_create_line_abundance_flag(db,
     "Weak suspicious measurement based on comparisons to all other nodes")
 num_rows2 = flags.update_line_abundance_flag(db, [flag_id],
     """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
-    AND node LIKE 'Lumba%' AND abundance < 6 AND flags = 0""".format(element, ion))
-
+    AND node LIKE 'Lumba%' AND abundance < 5.8 AND flags = 0""".format(element, ion))
 
 # Calculate biases and apply them.
-solar_biases = biases.solar_abundance_biases(db, element, ion)
-for node in solar_biases:
-    for wavelength, (bias, sigma, N) in solar_biases[node].items():
+species_biases = biases.differential_abundance_biases(db, element, ion)
+for node in species_biases:
+    for wavelength, (bias, sigma, N) in species_biases[node].items():
         rows = biases.apply_offset(db, element, ion, node, wavelength, -bias)
 
-
 # Produce some figures.
-import plot
-
 fig = plot.differential_line_abundances(db, element, ion, scaled=True,
-    ignore_flags=True)
+    ignore_flags=False)
+fig.savefig("figures/{0}{1}/scaled-differential-line-abundances.png".format(
+    element.upper(), ion))
 
+fig = plot.compare_solar(db, element, ion, scaled=True, ignore_flags=False)
+fig.savefig("figures/{0}{1}/scaled-compare-solar.png".format(element.upper(),
+    ion))
 
 # Perform the homogenisation.
 result = homogenise.species(db, element, ion)
