@@ -7,7 +7,10 @@ from __future__ import division, absolute_import, print_function
 
 __author__ = "Andy Casey <arc@ast.cam.ac.uk>"
 
+import yaml
+from collections import namedtuple
 from itertools import combinations
+
 import numpy as np
 
 import data
@@ -23,6 +26,41 @@ def calculate_differential_abundances(X, full_output=True):
 
     return Z
 
+
+def load_benchmarks(filename):
+
+    Benchmark = namedtuple('Benchmark', 'name, teff, logg, feh, abundances')
+
+    with open(filename, "r") as fp:
+        data = yaml.load(fp)
+
+    # For each star, clean up the abundances into the right format.
+    benchmarks = []
+    for name in data.keys():
+        cleaned_abundances = {}
+        for species, abundance_info in data[name].get("abundances", {}).items():
+            try:
+                abundance_info = float(abundance_info)
+            except:
+                # Some uncertainty in it?
+                abundance_info = abundance_info.split()
+                mean, sigma = map(float, (abundance_info[0], abundance_info[-1]))
+            else:
+                mean, sigma = abundance_info, np.nan
+ 
+            cleaned_abundances[species] = (mean, sigma)
+
+        kwds = data[name].copy()
+        kwds.setdefault("teff", np.nan)
+        kwds.setdefault("logg", np.nan)
+        kwds.setdefault("feh", np.nan)
+        kwds.update({
+            "name": name,
+            "abundances": cleaned_abundances,
+
+        })
+        benchmarks.append(Benchmark(**kwds))
+    return benchmarks
 
 
 

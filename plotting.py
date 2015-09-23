@@ -35,6 +35,7 @@ def _compare_repeat_spectra(measurements, colors, homogenised_measurements=None,
     N_nodes, N_wavelengths = len(nodes), len(wavelengths)
 
     column = "scaled_abundance" if scaled else "abundance"
+    if not np.any(np.isfinite(measurements[column])): return None
 
     # We should be getting the colours passed to us.
     bin_min, bin_max = abundance_extent \
@@ -101,9 +102,6 @@ def _compare_repeat_spectra(measurements, colors, homogenised_measurements=None,
             if np.any(np.isfinite(measurements[column][node_match])):
                 ax_hist.hist(measurements[column][node_match],
                     color=colors[node], **hist_kwds)
-
-            # For the legend.
-            ax_hist.plot([], [], color=colors[node], label=node)
 
         # For each node, show the points and uncertainties as a function of S/N
         for j, node in enumerate(nodes):
@@ -178,9 +176,6 @@ def _compare_repeat_spectra(measurements, colors, homogenised_measurements=None,
             ax_snr.set_xlabel(latexify(x_column))
             ax_hist.set_xlabel(latexify(label))
 
-        if ax_hist.is_first_row():
-            ax_hist.legend(loc="upper left", frameon=False, fontsize=12)
-
         ax_snr.xaxis.set_major_locator(MaxNLocator(5))
         ax_snr.yaxis.set_major_locator(MaxNLocator(5))
 
@@ -196,6 +191,13 @@ def _compare_repeat_spectra(measurements, colors, homogenised_measurements=None,
             if ax_snr.is_first_row() and reference_label is not None \
             and show_legend:
                 ax_snr.legend(loc="upper right", frameon=False, fontsize=12)
+
+    if show_legend:
+        for node in nodes:
+            if np.any(np.isfinite(measurements[column]) \
+                * (measurements["node"] == node)):
+                axes[0][0].plot([], [], color=colors[node], label=node)
+        axes[0][0].legend(loc="upper left", frameon=False, fontsize=12)
 
     # Set S/N axes on the same x-scale.
     xlims = np.array([ax.get_xlim() for ax in axes[:, 1]])
@@ -594,3 +596,96 @@ class AbundancePlotting(object):
                 loc="upper left", frameon=False, fontsize=10)
 
         return fig
+
+
+    def benchmark_comparison(self, element, ion, benchmark_filename, 
+        scaled=False, highlight_flagged=True, show_homogenised=True, bins=20,
+        abundance_extent=None, **kwargs):
+        """
+        Show distributions of abundances for each node and each line for all of
+        the benchmarks (in separate figures).
+
+        :param element:
+            The element name to show comparisons for.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to show (1 = neutral).
+
+        :type ion:
+            int
+
+        :param scaled: [optional]
+            Show scaled abundances. Alternative is to show unscaled abundances.
+
+        :type scaled:
+            bool
+
+        :param highlight_flagged: [optional]
+            Show a red outline around measurements that are flagged.
+
+        :type highlight_flagged:
+            bool
+
+        :param show_homogenised: [optional]
+            Show homogenised line abundances.
+
+        :type show_homogenised:
+            bool
+
+        :param bins: [optional]
+            The number of bins to show in the histograms.
+
+        :type bins:
+            int
+
+        :param abundance_extent: [optional]
+            The lower and upper range to show in abundances.
+
+        :type abundance_extent:
+            two length tuple of floats
+
+        :returns:
+            Returns a dictionary containing the figures as values.
+        """
+
+
+        figures = {}
+        for benchmark in utils.load_benchmarks(benchmark_filename):
+
+            if element not in benchmark.abundances:
+                logger.warn("No elemental abundance for {0} in {1}".format(
+                    element, benchmark.name))
+                figures[benchmark.name] = None
+                continue
+
+            measurements = self.release.retrieve_table(
+                """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON
+                (cname) cname, snr, ges_fld, ges_type, object FROM node_results
+                ORDER BY cname) n ON (l.element = '{0}' AND l.ion = '{1}' AND
+                l.cname = n.cname AND ges_type LIKE '%_BM' AND
+                (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
+                    element, ion, benchmark.name))
+            
+            homogenised_measurements = self.release.retrieve_table(
+                """SELECT * FROM homogenised_line_abundances l 
+                JOIN (SELECT DISTINCT ON (cname) cname, snr, ges_fld, ges_type,
+                object FROM node_results ORDER BY cname) n
+                ON (l.element = '{0}' AND l.ion = '{1}' AND
+                l.cname = n.cname AND ges_type LIKE '%_BM' AND
+                (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
+                    element, ion, benchmark.name)) if show_homogenised else None
+
+            figures[benchmark.name] = _compare_repeat_spectra(measurements,
+                self.release.node_colors, homogenised_measurements, 
+                scaled=scaled, abundance_extent=abundance_extent, bins=bins,
+                highlight_flagged=highlight_flagged,
+                reference_abundance=benchmark.abundances[element][0],
+                reference_uncertainty=benchmark.abundances[element][1],
+                reference_label=benchmark.name,
+                **kwargs)
+
+        return figures
+
