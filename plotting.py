@@ -333,17 +333,18 @@ class AbundancePlotting(object):
 
         measurements = self.release.retrieve_table(
             """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) 
-            cname, snr FROM node_results ORDER BY cname) n ON (l.element = '{0}'
-            AND l.ion = '{1}' AND l.cname = n.cname AND n.ges_fld LIKE 'M67%'
-            AND n.object = '1194')""".format(element, ion))
+            cname, snr, ges_fld, object FROM node_results ORDER BY cname) n ON
+            (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname 
+                AND n.ges_fld LIKE 'M67%' AND n.object = '1194')"""\
+            .format(element, ion))
         if measurements is None: return None
 
         homogenised_measurements = self.release.retrieve_table(
             """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
-            DISTINCT ON (cname) cname, snr FROM node_results ORDER BY cname)
-            n ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
-            AND n.ges_fld LIKE 'M67%' AND n.object = '1194')""".format(
-            element, ion)) if show_homogenised else None
+            DISTINCT ON (cname) cname, snr, ges_fld, object FROM node_results
+            ORDER BY cname) n ON (l.element = '{0}' AND l.ion = '{1}' AND 
+            l.cname = n.cname AND n.ges_fld LIKE 'M67%' AND n.object = '1194')
+            """.format(element, ion)) if show_homogenised else None
 
         return _compare_repeat_spectra(measurements, self.release.node_colors,
             homogenised_measurements, scaled=scaled, x_column="SNR",
