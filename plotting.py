@@ -583,15 +583,24 @@ class AbundancePlotting(object):
         benchmarks = sorted(use_benchmarks, key=lambda bm: getattr(bm, sort_by))
         column = "scaled_abundance" if scaled else "abundance"
 
-        data = self.release.retrieve_table("""SELECT * FROM line_abundances l
-            JOIN (SELECT cname, ges_fld, object FROM node_results WHERE ges_type
-            LIKE '%_BM') n ON (l.element = '{0}' AND l.ion = '{1}'
-            AND l.cname = n.cname AND l.{2} <> 'NaN') ORDER BY wavelength ASC"""\
-            .format(element, ion, column))
+        data = self.release.retrieve_table(
+            """SELECT distinct on (l.abundance_filename, l.wavelength, l.element,
+            l.ion) * FROM line_abundances l JOIN (SELECT cname, ges_fld, object
+            FROM node_results WHERE ges_type LIKE '%_BM') n 
+            ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname 
+            AND l.{2} <> 'NaN') ORDER BY l.abundance_filename, l.wavelength,
+            l.element, l.ion ASC""".format(element, ion, column))
+
+        homogenised_data = self.release.retrieve_table(
+            """SELECT DISTINCT ON (l.spectrum_filename_stub) * FROM
+            homogenised_line_abundances l JOIN (SELECT cname, ges_fld,
+            object FROM node_results WHERE ges_type like '%_BM') n ON
+            (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
+            AND l.abundance <> 'NaN') ORDER BY l.spectrum_filename_stub"""\
+            .format(element, ion)) if show_homogenised else None
 
         nodes = sorted(set(data["node"]))
         wavelengths = sorted(set(data["wavelength"]))
-
         Nx, Ny = len(nodes), len(wavelengths)
 
         xscale, yscale, escale = (8, 2, 2)
@@ -616,7 +625,49 @@ class AbundancePlotting(object):
             "zorder": 10
         }
 
+        homogenised_scatter_kwds = {
+            "facecolor": "w",
+            "zorder": 100,
+            "s": 50,
+            "lw": 2
+        }
+
         data = data.group_by(["wavelength"])
+
+        if homogenised_data is not None:
+            
+            homogenised_x_data = { w: [] for w in wavelengths }
+            homogenised_y_data = { w: [] for w in wavelengths }
+            homogenised_y_err = { w: [] for w in wavelengths }
+
+            homogenised_data = homogenised_data.group_by(["wavelength"])
+            homogenised_data["object"] = \
+                map(str.strip, map(str.lower, homogenised_data["object"]))
+            homogenised_data["ges_fld"] = \
+                map(str.strip, map(str.lower, homogenised_data["ges_fld"]))
+
+            for group in homogenised_data.groups:
+                wavelength = group["wavelength"][0]
+                for j, benchmark in enumerate(benchmarks):
+                    logger.debug("Matching homogenised for {}".format(benchmark))
+
+                    name = benchmark.name.lower()
+                    match = np.array([k for k, row in enumerate(group) \
+                        if name == row["ges_fld"] or name == row["object"]])
+                    logger.debug("Found {0} homogenised matches for {1}".format(
+                        len(match), benchmark.name))
+
+                    if len(match) == 0: continue
+
+                    homogenised_x_data[wavelength].extend(j * np.ones(len(match)))
+                    homogenised_y_data[wavelength].extend(group["abundance"][match] \
+                            - benchmark.abundances[element][0])
+                    homogenised_y_err[wavelength].extend(group["e_abundance"][match])
+        else:
+            homogenised_x_data = {}
+            homogenised_y_data = {}
+            homogenised_y_err = {}
+
         for i, (ax_group, wavelength, group) \
         in enumerate(zip(axes, wavelengths, data.groups)):
 
@@ -648,7 +699,7 @@ class AbundancePlotting(object):
                     match_node = match[group["node"][match] == node]
 
                     x_data[node].extend(j * np.ones(len(match_node)))
-                    difference = group["abundance"][match_node] \
+                    difference = group[column][match_node] \
                         - benchmark.abundances[element][0]
                     y_data[node].extend(difference)
                     y_err[node].extend(group["e_abundance"][match_node])
@@ -665,6 +716,7 @@ class AbundancePlotting(object):
                 is_flagged[node] = np.array(is_flagged[node])
 
             for k, (ax, node) in enumerate(zip(ax_group, nodes)):
+
                 if ax.is_first_row():
                     ax.set_title(node)
 
@@ -700,18 +752,17 @@ class AbundancePlotting(object):
                     ax.errorbar(x, y, yerr=yerr, lc="k", ecolor="k", aa=True, 
                         fmt=None, mec="k", mfc="w", ms=6, zorder=1)
             
-                else:
-                    x = 0.5 + np.array(x_data[Fnode])[~flagged]
-                    y = np.array(y_data[node])[~flagged]
-                    yerr = np.array(y_err[node])[~flagged]
+                x = 0.5 + np.array(x_data[node])[~flagged]
+                y = np.array(y_data[node])[~flagged]
+                yerr = np.array(y_err[node])[~flagged]
 
-                    ax.scatter(x, y, facecolor=color, **scatter_kwds)
-                    ax.errorbar(x, y, yerr=yerr, lc="k", ecolor="k", aa=True, 
-                        fmt=None, mec="k", mfc="w", ms=6, zorder=1)               
-                
+                ax.scatter(x, y, facecolor=color, **scatter_kwds)
+                ax.errorbar(x, y, yerr=yerr, lc="k", ecolor="k", aa=True, 
+                    fmt=None, mec="k", mfc="w", ms=6, zorder=9)               
+
                 # Show relative mean and std. dev for each node
-                mean = np.nanmean(y_data[node][flagged])
-                sigma = np.nanstd(y_data[node][flagged])
+                mean = np.nanmean(y_data[node][~flagged])
+                sigma = np.nanstd(y_data[node][~flagged])
 
                 ax.axhline(np.nanmean(y_mean_offsets[node]), c=color, lw=2,
                     linestyle=":")
@@ -720,37 +771,42 @@ class AbundancePlotting(object):
                 ax.axhline(mean, c=color, lw=2, zorder=-1,
                     label=latexify(node.strip()))
 
-        # Common y-axis limits.
-        if differential_abundance_extent is None:
-            y_lim = max([np.abs(ax.get_ylim()).max() for ax in axes.flatten()])
-            [ax.set_ylim(-y_lim, +y_lim) for ax in axes.flatten()]
-        else:
-            #[ax.set_ylim(extent) for ax in axes.flatten()]
-            plt.draw()
+            # Draw all homogenised values, if they exist.
+            if homogenised_data is not None:
+                x = homogenised_x_data[wavelength]
+                y = homogenised_y_data[wavelength]
+                yerr = homogenised_y_err[wavelength]
+                
+                for ax in ax_group:
+                    ax.errorbar(x, y, yerr=yerr, lc="k", ecolor="k", aa=True,
+                        fmt=None, mec="k", mfc="w", ms=6, lw=2, zorder=99)
+                    ax.scatter(x, y, **homogenised_scatter_kwds)
 
-            lower, upper = differential_abundance_extent
-            # Mark how many measurements are out of frame.
-            for ax in axes.flatten():
-                data = ax.collections[-1].get_offsets()
+            if differential_abundance_extent is not None:
+                extent = lower, upper = differential_abundance_extent
+                
+                y_high = 0.95 * np.ptp(extent) + lower
+                y_low = 0.05 * np.ptp(extent) + lower
 
-                too_high = Counter(data[:, 0][data[:, 1] > upper])
-                too_low = Counter(data[:, 0][data[:, 1] < lower])
+                for ax, node in zip(ax_group, nodes):
 
-                print(differential_abundance_extent)
-                print(too_high)
-                print(too_low)
-                if len(too_high) > 0 or len(too_low) > 0:
-                    raise a
+                    ax.set_ylim(extent)
 
-            raise a
+                    too_high = Counter(x_data[node][y_data[node] > upper])
+                    too_low = Counter(x_data[node][y_data[node] < lower])
 
-        #  TODO Mark how many lines are out of the frame.
+                    for x_position, N in too_high.items():
+                        ax.text(x_position + .5, y_high, latexify(N), color="r",
+                            fontsize=10, zorder=100, verticalalignment="top",
+                            horizontalalignment="center")
 
-        raise a
+                    for x_position, N in too_low.items():
+                        ax.text(x_position + .5, y_low, latexify(N), color="r",
+                            fontsize=10, zorder=100, verticalalignment="bottom",
+                            horizontalalignment="center")
 
         fig.tight_layout()
         return fig
-
 
 
     def transition_heatmap(self, element, ion, column="abundance", **kwargs):
@@ -865,9 +921,233 @@ class AbundancePlotting(object):
         return fig
 
 
+    def mean_abundances(self, element, ion, bins=None, extent=None, **kwargs):
+        """
+        Show the mean (node-reported) abundances of the given species from each
+        node.
+
+        :param element:
+
+        :param ion:
+
+        """
+
+        nodes = self.release.nodes
+        N_nodes = len(nodes), int(self.release.retrieve("""SELECT count(*) FROM
+            node_results WHERE node = %s""", (nodes[0], ))[0][0])
+
+        X = np.nan * np.ones((N_nodes, N_entries))
+        X_uncertainties = X.copy()
+        
+        column = "{0}{1}".format(element.lower(), ion)
+        for i, node in enumerate(nodes):
+            data = self.release.retrieve_table("""SELECT {0}, e_{0}
+                FROM node_results WHERE node = %s ORDER BY ra DESC, dec DESC,
+                cname DESC""".format(column), (node, ))
+            X[i, :] = data[column]
+            X_uncertainties[i, :] = data["e_{}".format(column)]
+            
+        if 2 > np.max(np.sum(np.isfinite(X), axis=0)):
+            # No data for any star from 2 nodes to compare against.
+            return None
+
+        bins = bins or np.arange(-0.50, 0.55, 0.05)
+        return _corner_scatter(X, uncertainties=X_uncertainties,
+            labels=map(str.strip, nodes), bins=bins, extent=extent, **kwargs)
+
+
+    def line_abundances(self, element, ion, reference_column, scaled=False,
+        highlight_flagged=True, aux_column=None, x_extent=None, y_extent=None,
+        show_node_comparison=True, show_line_comparison=True,
+        abundance_format="log_x", **kwargs):
+        """
+        Show the reference and relative abundances for a given element and ion
+        against the reference column provided.
+        
+        :param element:
+            The atomic element of interest.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the species of interest (1 indicates neutral)
+
+        :type ion:
+            int
+
+        :param reference_column:
+            The name of the reference column (from the node results or line
+            abundances tables) to display on the x-axis.
+
+        :type reference_column:
+            str
+
+        :param scaled: [optional]
+            Show scaled abundances. Alternative is to show unscaled abundances.
+
+        :type scaled:
+            bool
+
+        :param highlight_flagged: [optional]
+            Show a red outline around measurements that are flagged.
+
+        :type highlight_flagged:
+            bool
+
+        :param aux_column: [optional]
+            Show an auxiliary column as a colorbar.
+
+        :type aux_column:
+            str
+
+        :param x_extent: [optional]
+            The range of values to display in the x-axis.
+
+        :type x_extent:
+            None or two-length tuple
+
+        :param y_extent: [optional]
+            The range of values to display in the y-axis.
+
+        :type y_extent:
+            None or two-length tuple
+
+        :param show_node_comparison: [optional]
+            Show triangle markers indicating all abundances from the given node.
+
+        :type show_node_comparison:
+            bool
+
+        :param show_line_comparison: [optional]
+            Show square markers indicating all abundances for the given line.
+
+        :type show_line_comparison:
+            bool
+
+        :param abundance_format: [optional]
+            The abundance format to display. Available options are 'log_x',
+            'x_h', or 'x_fe'.
+
+        :type abundance_format:
+            str
+        """
+
+        None
+
+
 def latexify(label):
     """ A placeholder for a smart function to latexify common labels. """
     return label
+
+
+def _corner_scatter(data, labels=None, uncertainties=None, extent=None,
+    color=None, bins=20, relevant_text=None):
+    """
+    Create a corner scatter plot showing the differences between each node.
+
+    :param extent: [optional]
+        The (minimum, maximum) extent of the plots.
+
+    :type extent:
+        two-length tuple
+
+    :returns:
+        A matplotlib figure.
+    """
+
+    # How many nodes to plot?
+    N = data.shape[0]
+    K = N
+    assert K > 0, "Need more than one node to compare against."
+
+    factor = 2.0           # size of one side of one panel
+    lbdim = 0.5 * factor   # size of left/bottom margin
+    trdim = 0.5 * factor   # size of top/right margin
+    whspace = 0.15         # w/hspace size
+    plotdim = factor * K + factor * (K - 1.) * whspace
+    dim = lbdim + plotdim + trdim
+
+    fig, axes = plt.subplots(K, K, figsize=(dim, dim))
+    
+    lb = lbdim / dim
+    tr = (lbdim + plotdim) / dim
+    fig.subplots_adjust(left=lb, bottom=lb, right=tr, top=tr,
+        wspace=whspace, hspace=whspace)
+
+    hist_kwargs = {
+        "color": "k",
+        "histtype": "step"
+    }
+
+    extent = extent or (0.9 * np.nanmin(data), 1.1 * np.nanmax(data))
+    
+    # Match all of the nodes
+    for i in range(N):
+        for j in range(N):
+
+            if j > i: # hide.
+                try:
+                    ax = axes[i, j]
+                    ax.set_frame_on(False)
+                    if ax.is_last_col() and ax.is_first_row() and relevant_text:
+                        ax.text(0.95, 0.95, relevant_text, fontsize=14,
+                            verticalalignment="top", horizontalalignment="right")
+                        [_([]) for _ in (ax.set_xticks, ax.set_yticks)]
+                    else:
+                        ax.set_visible(False)
+                    
+                except IndexError:
+                    None
+                continue
+                
+            ax = axes[i, j]
+
+            if i == j:
+                indices = np.arange(N)
+                indices = indices[indices != i]
+
+                diff = (data[i] - data[indices]).flatten()
+                diff = diff[np.isfinite(diff)]
+                if diff.size:
+                    ax.hist(diff, bins=bins, **hist_kwargs)
+                
+            else:    
+                ax.plot(extent, extent, "k:", zorder=-100)
+                if uncertainties is not None:
+                    ax.errorbar(data[i], data[j], 
+                        xerr=uncertainties[i], yerr=uncertainties[j],
+                        ecolor="k", aa=True, fmt=None, mec='k', mfc="w", ms=6,
+                        zorder=1, lc="k")
+
+                ax.scatter(data[i], data[j], c=color or "w", zorder=100)
+                
+                ax.set_xlim(extent)
+                ax.set_ylim(extent)
+
+            ax.xaxis.set_major_locator(MaxNLocator(5))
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+
+            if i < K - 1:
+                ax.set_xticklabels([])
+            else:
+                [l.set_rotation(45) for l in ax.get_xticklabels()]
+                if labels is not None:
+                    if i == j:
+                        ax.set_xlabel("{} $-$ $X$".format(labels[j]))
+                    else:
+                        ax.set_xlabel(labels[j])
+                    ax.xaxis.set_label_coords(0.5, -0.3)
+                
+            if j > 0 or i == j:
+                ax.set_yticklabels([])
+            else:
+                [l.set_rotation(45) for l in ax.get_yticklabels()]
+                if labels is not None:
+                    ax.set_ylabel(labels[i])
+                    ax.yaxis.set_label_coords(-0.3, 0.5)
+
+    return fig
 
 
 def _compare_repeat_spectra(measurements, colors, homogenised_measurements=None,
