@@ -402,6 +402,12 @@ class AbundancePlotting(object):
         
         :type ignore_flagged:
             bool
+
+        :param show_legend: [optional]
+            Show a legend with the node colours.
+
+        :type show_legend:
+            bool
         """
 
         data = self.release.retrieve_table("""SELECT * FROM line_abundances
