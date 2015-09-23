@@ -17,7 +17,7 @@ from matplotlib.cm import Paired
 from bias import AbundanceBiases
 from flag import AbundanceFlags
 from homogenise import AbundanceHomogenisation
-
+from plotting import AbundancePlotting
 
 logging.basicConfig(level=logging.DEBUG,
     format='%(asctime)-15s %(name)s %(levelname)s %(message)s')
@@ -39,6 +39,7 @@ class DataRelease(object):
         self.biases = AbundanceBiases(self)
         self.flags = AbundanceFlags(self)
         self.homogenise = AbundanceHomogenisation(self)
+        self.plot = AbundancePlotting(self)
 
         Config = namedtuple('Configuration', 
             'wavelength_tolerance, round_wavelengths')
@@ -225,7 +226,13 @@ class DataRelease(object):
             names = [[n] for n in names]
             names = [".".join(p + n) for p, n in zip(prefixes, names)]
 
-        return Table(rows=rows, names=names)
+        table = Table(rows=rows, names=names)
+        # If wavelengths are in the table, and we should round them, round them.
+        if "wavelength" in table.dtype.names \
+        and self.config.round_wavelengths >= 0:
+            table["wavelength"] = np.round(table["wavelength"],
+                self.config.round_wavelengths)
+        return table
 
 
     def retrieve_column(self, query, values=None, asarray=False):
