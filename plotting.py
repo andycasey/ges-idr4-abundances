@@ -19,6 +19,7 @@ import utils
 #("compare-m67-1194", plot.compare_m67_twin),
 
 def latexify(label):
+    """ A placeholder for a smart function to latexify common labels. """
     return label
 
 
@@ -209,11 +210,53 @@ class AbundancePlotting(object):
     def __init__(self, release):
         self.release = release
 
-    def compare_solar(self, element, ion, scaled=False, highlight_flagged=True,
-        show_homogenised=True, bins=20, abundance_extent=None):
+    def solar_comparison(self, element, ion, scaled=False, 
+        highlight_flagged=True, show_homogenised=True, bins=20,
+        abundance_extent=None, **kwargs):
         """
         Show distributions of abundances for each node and each line for the Sun
 
+        :param element:
+            The element name to show comparisons for.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to show (1 = neutral).
+
+        :type ion:
+            int
+
+        :param scaled: [optional]
+            Show scaled abundances. Alternative is to show unscaled abundances.
+
+        :type scaled:
+            bool
+
+        :param highlight_flagged: [optional]
+            Show a red outline around measurements that are flagged.
+
+        :type highlight_flagged:
+            bool
+
+        :param show_homogenised: [optional]
+            Show homogenised line abundances.
+
+        :type show_homogenised:
+            bool
+
+        :param bins: [optional]
+            The number of bins to show in the histograms.
+
+        :type bins:
+            int
+
+        :param abundance_extent: [optional]
+            The lower and upper range to show in abundances.
+
+        :type abundance_extent:
+            two length tuple of floats
         """
 
         measurements = self.release.retrieve_table(
@@ -223,16 +266,88 @@ class AbundancePlotting(object):
             """.format(element, ion))
         if measurements is None: return None
 
-        if show_homogenised:
-            homogenised_measurements = self.release.retrieve_table(
-                """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
-                DISTINCT ON (cname) cname, snr FROM node_results ORDER BY cname)
-                n ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
-                AND l.cname LIKE 'ssssss%')""".format(element, ion))
+        homogenised_measurements = self.release.retrieve_table(
+            """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
+            DISTINCT ON (cname) cname, snr FROM node_results ORDER BY cname)
+            n ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
+            AND l.cname LIKE 'ssssss%')""".format(element, ion)) \
+            if show_homogenised else None
 
         return _compare_repeat_spectra(measurements, self.release.node_colors,
             homogenised_measurements, scaled=scaled, x_column="SNR",
             abundance_extent=abundance_extent, bins=bins,
             highlight_flagged=highlight_flagged,
             reference_abundance=utils.solar_abundance(element),
-            reference_uncertainty=None, reference_label="Solar")
+            reference_uncertainty=None, reference_label="Solar", **kwargs)
+
+
+    def m67_twin_comparison(self, element, ion, scaled=False, 
+        highlight_flagged=True, show_homogenised=True, bins=20,
+        abundance_extent=None, **kwargs):
+        """
+        Show distributions of abundances for each node and each line for the 
+        solar twin in M67 (M67-1194).
+
+        :param element:
+            The element name to show comparisons for.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to show (1 = neutral).
+
+        :type ion:
+            int
+
+        :param scaled: [optional]
+            Show scaled abundances. Alternative is to show unscaled abundances.
+
+        :type scaled:
+            bool
+
+        :param highlight_flagged: [optional]
+            Show a red outline around measurements that are flagged.
+
+        :type highlight_flagged:
+            bool
+
+        :param show_homogenised: [optional]
+            Show homogenised line abundances.
+
+        :type show_homogenised:
+            bool
+
+        :param bins: [optional]
+            The number of bins to show in the histograms.
+
+        :type bins:
+            int
+
+        :param abundance_extent: [optional]
+            The lower and upper range to show in abundances.
+
+        :type abundance_extent:
+            two length tuple of floats
+        """
+
+        measurements = self.release.retrieve_table(
+            """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) 
+            cname, snr FROM node_results ORDER BY cname) n ON (l.element = '{0}'
+            AND l.ion = '{1}' AND l.cname = n.cname AND n.ges_fld LIKE 'M67%'
+            AND n.object = '1194')""".format(element, ion))
+        if measurements is None: return None
+
+        homogenised_measurements = self.release.retrieve_table(
+            """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
+            DISTINCT ON (cname) cname, snr FROM node_results ORDER BY cname)
+            n ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
+            AND n.ges_fld LIKE 'M67%' AND n.object = '1194')""".format(
+            element, ion)) if show_homogenised else None
+
+        return _compare_repeat_spectra(measurements, self.release.node_colors,
+            homogenised_measurements, scaled=scaled, x_column="SNR",
+            abundance_extent=abundance_extent, bins=bins,
+            highlight_flagged=highlight_flagged,
+            reference_abundance=utils.solar_abundance(element),
+            reference_uncertainty=None, reference_label="Solar", **kwargs)
