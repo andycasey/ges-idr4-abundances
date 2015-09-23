@@ -61,8 +61,9 @@ class AbundanceHomogenisation(object):
         col = "scaled_abundance" if kwargs.get("scaled", True) else "abundance"
         for i, wavelength in enumerate(set(wavelengths)):
             # Calculate the correlation coefficients for this line.
-            X, nodes = self.release._match_unflagged_line_data(element, ion, 
-                wavelength, col, ignore_gaps=True, **kwargs)
+            X, nodes = self.release._match_line_abundances(element, ion, 
+                wavelength, col, ignore_gaps=True, include_flagged_lines=False,
+                **kwargs)
             rho = np.atleast_2d(np.corrcoef(X))
 
             # For each cname, homogenise this line.
