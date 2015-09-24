@@ -990,9 +990,10 @@ class AbundancePlotting(object):
 
 
     def line_abundances(self, element, ion, reference_column, scaled=False,
-        highlight_flagged=True, aux_column=None, x_extent=None, y_extent=None,
-        show_node_comparison=True, show_line_comparison=True, show_legend=False,
-        show_uncertainties=False, abundance_format="log_x", **kwargs):
+        highlight_flagged=True, show_homogenised=True, aux_column=None,
+        x_extent=None, y_extent=None, show_node_comparison=True,
+        show_line_comparison=True, show_legend=False, show_uncertainties=False,
+        abundance_format="log_x", **kwargs):
         """
         Show the reference and relative abundances for a given element and ion
         against the reference column provided.
@@ -1026,6 +1027,12 @@ class AbundancePlotting(object):
             Show a red outline around measurements that are flagged.
 
         :type highlight_flagged:
+            bool
+
+        :param show_homogenised: [optional]
+            Show homogenised line abundances.
+
+        :type show_homogenised:
             bool
 
         :param aux_column: [optional]
@@ -1112,7 +1119,23 @@ class AbundancePlotting(object):
             else:
                 scatter_kwds["vmin"], scatter_kwds["vmax"] = aux_extent
 
+        homogenised_scatter_kwds = scatter_kwds.copy()
+        homogenised_scatter_kwds["lw"] = 2
+
         nodes = sorted(set(data["node"]))
+        if show_homogenised:
+            assert "Homogenised" not in nodes, "Restricted name"
+            homogenised_data = self.release.retrieve_table(
+                """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
+                DISTINCT ON (cname) cname, {0} FROM node_results ORDER BY cname)
+                n ON (l.element = %s AND l.ion = %s AND l.cname = n.cname)
+                ORDER BY wavelength ASC""".format(", ".join(set(columns))),
+                    (element, ion))
+            if homogenised_data is None:
+                show_homogenised = False
+            else:
+                nodes += ["Homogenised"]
+
         wavelengths = sorted(set(data["wavelength"]))
         N_nodes, N_lines = len(nodes), len(wavelengths)
 
@@ -1137,38 +1160,67 @@ class AbundancePlotting(object):
         for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
 
             match_wavelength = (data["wavelength"] == wavelength)
-            for j, (ax, node) in enumerate(zip(node_axes, nodes)):
-                # Get all measurements for this line by this node.
-                match_node = (data["node"] == node)
-                match = match_node * match_wavelength
+            if show_homogenised:
+                match_homogenised_wavelength \
+                    = (homogenised_data["wavelength"] == wavelength)
 
-                x = data[reference_column][match]
-                y = data["abundance"][match]
-                
+            for j, (ax, node) in enumerate(zip(node_axes, nodes)):
+
                 # Labels and titles
                 if ax.is_last_row():
                     ax.set_xlabel(reference_column)
-
                 if ax.is_first_col():
-                    ax.set_ylabel(node)
-                
+                    ax.set_ylabel(node)               
                 if ax.is_first_row():
                     ax.set_title(wavelength)
 
+                # Get all measurements for this line by this node.
+                if node == "Homogenised":
+                    ax_data = homogenised_data
+                    match = match_homogenised_wavelength
+                    
+                else:
+                    ax_data = data
+                    match = match_wavelength * (data["node"] == node)
+
+                x = ax_data[reference_column][match]
+                y = ax_data["abundance"][match]                 
                 if len(x) == 0: continue
 
                 if abundance_format == "x_h":
                     y -= utils.solar_abundance(element)
                 elif abundance_format == "x_fe":
                     y -= utils.solar_abundance(element) \
-                        + data["feh"][match].astype(float)
+                        + ax_data["feh"][match].astype(float)
 
-                if aux_column is not None:
-                    scatter_kwds["c"] = data[aux_column][match]
+                if node == "Homogenised":
+                    kwds = homogenised_scatter_kwds.copy()
+                    if aux_column is not None:
+                        kwds["c"] = ax_data[aux_column][match]
 
-                scat = ax.scatter(x, y, **scatter_kwds)
+                    scat = ax.scatter(x, y, **kwds)
+                else:
+                    kwds = scatter_kwds.copy()
+                        
+                    if highlight_flagged:
+                        flagged = ax_data["flags"][match] > 0
+                        if not all(flagged):
+                            if aux_column is not None:
+                                kwds["c"] = ax_data[aux_column][match][~flagged]
+                            scat = ax.scatter(x[~flagged], y[~flagged], **kwds)
+
+                        if any(flagged):
+                            if aux_column is not None:
+                                kwds["c"] = ax_data[aux_column][match][flagged]
+                            kwds["edgecolor"] = "r"
+                            kwds["lw"] = 2
+                            ax.scatter(x[flagged], y[flagged], **kwds)
+
+                    else:
+                        scat = ax.scatter(x, y, **kwds)
+
                 if show_uncertainties:
-                    raise NotImplementedError
+                    raise NotImplementedError("sorry, no time")
 
         comparison_scatter_kwds = {
             "s": 25,
@@ -1178,6 +1230,9 @@ class AbundancePlotting(object):
             "alpha": 0.5,
             "edgecolor": "#BBBBBB"
         }
+        # We don't need the homogenised node to see comparisons, so let's remove
+        # it from the rest.
+        if show_homogenised: nodes.remove("Homogenised")
 
         # Show all other measurements for this line (from all nodes).
         if show_line_comparison: 
@@ -1266,7 +1321,7 @@ class AbundancePlotting(object):
                 top=(tr * yscale + ys)/ydim,
                 wspace=wspace, hspace=hspace)
 
-        raise NotImplementedError
+        return fig
 
 
 def latexify(label):
