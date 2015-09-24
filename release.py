@@ -81,20 +81,20 @@ class DataRelease(object):
         if additional_columns is None:
             data = self.retrieve_table("""SELECT node, wavelength,
                 spectrum_filename_stub, abundance, scaled_abundance 
-                FROM line_abundances WHERE element = %s AND ion = %s
+                FROM line_abundances WHERE trim(element) = %s AND ion = %s
                 {flag_query} ORDER BY node ASC""".format(flag_query=flag_query),
                 (element, ion))
 
         else:
             data = self.retrieve_table("""SELECT * FROM line_abundances l JOIN (
                 SELECT DISTINCT ON (cname) cname, {additional_columns} FROM
-                node_results ORDER BY cname) n ON (l.element = %s AND l.ion = %s
+                node_results ORDER BY cname) n ON (trim(l.element) = %s AND l.ion = %s
                 AND l.cname = n.cname {flag_query})""".format(
                 additional_columns=", ".join(additional_columns),
                 flag_query=flag_query), (element, ion))
 
         if data is None: return (None, None, None)
-        
+
         nodes = sorted(set(data["node"]))
         wavelengths = sorted(set(data["wavelength"]))
 
@@ -122,7 +122,7 @@ class DataRelease(object):
         measurements = self.retrieve_table(
             "SELECT node, spectrum_filename_stub, " + column + \
             """ FROM line_abundances
-            WHERE element = %s AND ion = %s {flag_query} AND wavelength >= %s
+            WHERE trim(element) = %s AND ion = %s {flag_query} AND wavelength >= %s
             AND wavelength <= %s""".format(
                 flag_query="AND flags = 0" if not include_flagged_lines else ""),
                 (element, ion, wavelength - tol, wavelength + tol))

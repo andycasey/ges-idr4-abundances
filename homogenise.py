@@ -35,15 +35,15 @@ class AbundanceHomogenisation(object):
 
         # Remove any existing homogenised line or average abundances.
         self.release.execute("""DELETE FROM homogenised_line_abundances
-            WHERE element = %s AND ion = %s""", (element, ion))
+            WHERE trim(element) = %s AND ion = %s""", (element, ion))
         self.release.execute("""DELETE FROM homogenised_abundances
-            WHERE element = %s AND ion = %s""", (element, ion))
+            WHERE trim(element) = %s AND ion = %s""", (element, ion))
         self.release.commit()
 
         # Get the unique wavelengths.
         wavelengths = self.release.retrieve_column(
             """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
-            WHERE element = %s AND ion = %s AND flags = 0
+            WHERE trim(element) = %s AND ion = %s AND flags = 0
             ORDER BY wavelength ASC""", (element, ion), asarray=True)
 
         if self.release.config.round_wavelengths >= 0:
@@ -53,23 +53,27 @@ class AbundanceHomogenisation(object):
         # Get the unique CNAMEs.
         cnames = self.release.retrieve_column(
             """SELECT DISTINCT ON (cname) cname FROM line_abundances
-            WHERE element = %s AND ion = %s ORDER BY cname ASC""",
+            WHERE trim(element) = %s AND ion = %s ORDER BY cname ASC""",
             (element, ion))
 
         # For each wavelength, approximate the covariance matrix then homogenise
         # this wavelength for all cnames.
-        col = "scaled_abundance" if kwargs.get("scaled", True) else "abundance"
+        column = ("abundance", "scaled_abundance")[kwargs.get("scaled", True)]
+        logger.debug("Homogenising {0} {1} using column {2}".format(element,
+            ion, column))
+
         for i, wavelength in enumerate(set(wavelengths)):
             # Calculate the correlation coefficients for this line.
             X, nodes = self.release._match_line_abundances(element, ion, 
-                wavelength, col, ignore_gaps=True, include_flagged_lines=False,
-                **kwargs)
+                wavelength, column, ignore_gaps=True, 
+                include_flagged_lines=False, **kwargs)
             rho = np.atleast_2d(np.corrcoef(X))
+            cov = np.atleast_2d(np.cov(X))
 
             # For each cname, homogenise this line.
             for j, cname in enumerate(cnames):
-                self.line_abundances(element, ion, cname, wavelength, rho, nodes,
-                    **kwargs)
+                self.line_abundances(element, ion, cname, wavelength, rho, cov,
+                    nodes, **kwargs)
 
         # Need to commit before we can do the averaged results per star.
         self.release.commit()
@@ -83,7 +87,7 @@ class AbundanceHomogenisation(object):
         return None
 
 
-    def line_abundances(self, element, ion, cname, wavelength, rho, nodes,
+    def line_abundances(self, element, ion, cname, wavelength, rho, cov, nodes,
         **kwargs):
         """
         Homogenise the line abundances for a given element, ion, star and 
@@ -124,14 +128,14 @@ class AbundanceHomogenisation(object):
         if self.release.config.wavelength_tolerance > 0:   
             measurements = self.release.retrieve_table("""SELECT * 
                 FROM line_abundances
-                WHERE element = %s AND ion = %s AND cname = %s AND flags = 0
+                WHERE trim(element) = %s AND ion = %s AND cname = %s AND flags = 0
                 AND wavelength >= %s AND wavelength <= %s ORDER BY node ASC""",
                 (element, ion, cname,
                     wavelength - self.release.config.wavelength_tolerance,
                     wavelength + self.release.config.wavelength_tolerance))
         else:
             measurements = self.release.retrieve_table("""SELECT *
-                FROM line_abundances WHERE element = %s AND ion = %s AND cname 
+                FROM line_abundances WHERE trim(element) = %s AND ion = %s AND cname 
                 %s AND flags = 0 AND wavelength = %s ORDER BY node ASC""",
                 (element, ion, cname, wavelength))
         if measurements is None: return
@@ -142,7 +146,7 @@ class AbundanceHomogenisation(object):
         for i, group in enumerate(measurements.groups):
 
             mean, sigma, N = _homogenise_spectrum_line_abundances(
-                group, rho, nodes, **kwargs)
+                group, rho, cov, nodes, **kwargs)
 
             stub = group["spectrum_filename_stub"][0]
             results[stub] = self.insert_line_abundance(element, ion, cname,
@@ -176,7 +180,7 @@ class AbundanceHomogenisation(object):
         
         # Get the data for this star/spectrum filename stub.
         line_abundances = self.release.retrieve_table(
-            """SELECT * FROM homogenised_line_abundances WHERE element = %s
+            """SELECT * FROM homogenised_line_abundances WHERE trim(element) = %s
             AND ion = %s AND cname = %s""", (element, ion, cname))
         if line_abundances is None: return
         line_abundances = line_abundances.group_by(["spectrum_filename_stub"])
@@ -359,7 +363,7 @@ class AbundanceHomogenisation(object):
             })[0][0]
 
 
-def _homogenise_spectrum_line_abundances(measurements, rho, nodes, scaled=True,
+def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
     **kwargs):
 
     # Note that by default we use scaled_abundance, not abundance, such that we
@@ -367,7 +371,7 @@ def _homogenise_spectrum_line_abundances(measurements, rho, nodes, scaled=True,
     # begins.
 
     e_column = "e_abundance"
-    column = "scaled_abundance" if scaled else "abundance"
+    column = ("abundance", "scaled_abundance")[kwargs.get("scaled", True)]
 
     N_measurements = np.isfinite(measurements[column]).sum()
 
@@ -383,16 +387,20 @@ def _homogenise_spectrum_line_abundances(measurements, rho, nodes, scaled=True,
         if node not in measurements["node"]: continue
         match = (measurements["node"] == node)
         abundance[i] = measurements[column][match][0]
-        u_abundance[i]  = measurements[e_column][match][0]
+        #u_abundance[i]  = measurements[e_column][match][0] # use NODE ABUNDANCE
+        u_abundance[i] = (np.diag(cov)[i]**0.5)/np.sqrt(len(nodes))
+        if np.isfinite(measurements[e_column][match][0]):
+            u_abundance[i] = np.sqrt(u_abundance[i]**2 + measurements[e_column][match][0]**2)
 
     mask = np.isfinite(abundance)
     abundance = abundance[mask]
     u_abundance = u_abundance[mask]
 
     # Fill in missing abundance uncertainties with the mean of the others.
-    bad_values = ~np.isfinite(u_abundance) + (0 >= u_abundance)
-    u_abundance[bad_values] = np.nanmean(u_abundance[~bad_values])
-    if not np.any(np.isfinite(u_abundance)):
+    #bad_values = ~np.isfinite(u_abundance) + (0 >= u_abundance)
+    #u_abundance[bad_values] = np.nanmean(u_abundance[~bad_values])
+    if not np.all(np.isfinite(u_abundance)):
+        raise wtfError
         logger.warn("Setting 0.2 dex uncertainty for {0} {1} line at {2}".format(
             None, None, measurements["wavelength"][0]))
         u_abundance[:] = 0.2

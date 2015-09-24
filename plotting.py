@@ -73,7 +73,7 @@ class AbundancePlotting(object):
 
         measurements = self.release.retrieve_table(
             """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) 
-            cname, snr FROM node_results ORDER BY cname) n ON (l.element = '{0}'
+            cname, snr FROM node_results ORDER BY cname) n ON (trim(l.element) = '{0}'
             AND l.ion = '{1}' AND l.cname = n.cname AND l.cname LIKE 'ssssss%')
             """.format(element, ion))
         if measurements is None: return None
@@ -81,7 +81,7 @@ class AbundancePlotting(object):
         homogenised_measurements = self.release.retrieve_table(
             """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
             DISTINCT ON (cname) cname, snr FROM node_results ORDER BY cname)
-            n ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
+            n ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
             AND l.cname LIKE 'ssssss%')""".format(element, ion)) \
             if show_homogenised else None
 
@@ -146,7 +146,7 @@ class AbundancePlotting(object):
         measurements = self.release.retrieve_table(
             """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) 
             cname, snr, ges_fld, object FROM node_results ORDER BY cname) n ON
-            (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname 
+            (trim(l.element) = '{0}' AND l.ion = '{1}' AND l.cname = n.cname 
                 AND n.ges_fld LIKE 'M67%' AND n.object = '1194')"""\
             .format(element, ion))
         if measurements is None: return None
@@ -154,7 +154,7 @@ class AbundancePlotting(object):
         homogenised_measurements = self.release.retrieve_table(
             """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
             DISTINCT ON (cname) cname, snr, ges_fld, object FROM node_results
-            ORDER BY cname) n ON (l.element = '{0}' AND l.ion = '{1}' AND 
+            ORDER BY cname) n ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND 
             l.cname = n.cname AND n.ges_fld LIKE 'M67%' AND n.object = '1194')
             """.format(element, ion)) if show_homogenised else None
 
@@ -223,7 +223,7 @@ class AbundancePlotting(object):
         """
 
         data = self.release.retrieve_table("""SELECT * FROM line_abundances
-            WHERE element = %s AND ion = %s {flag_query} ORDER BY wavelength ASC
+            WHERE trim(element) = %s AND ion = %s {flag_query} ORDER BY wavelength ASC
             """.format(flag_query="AND flags = 0" if ignore_flagged else ""),
             (element, ion))
         if data is None: return
@@ -473,7 +473,7 @@ class AbundancePlotting(object):
             measurements = self.release.retrieve_table(
                 """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON
                 (cname) cname, snr, ges_fld, ges_type, object FROM node_results
-                ORDER BY cname) n ON (l.element = '{0}' AND l.ion = '{1}' AND
+                ORDER BY cname) n ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND
                 l.cname = n.cname AND ges_type LIKE '%_BM' AND
                 (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
                     element, ion, benchmark.name))
@@ -482,7 +482,7 @@ class AbundancePlotting(object):
                 """SELECT * FROM homogenised_line_abundances l 
                 JOIN (SELECT DISTINCT ON (cname) cname, snr, ges_fld, ges_type,
                 object FROM node_results ORDER BY cname) n
-                ON (l.element = '{0}' AND l.ion = '{1}' AND
+                ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND
                 l.cname = n.cname AND ges_type LIKE '%_BM' AND
                 (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
                     element, ion, benchmark.name)) if show_homogenised else None
@@ -587,7 +587,7 @@ class AbundancePlotting(object):
             """SELECT distinct on (l.abundance_filename, l.wavelength, l.element,
             l.ion) * FROM line_abundances l JOIN (SELECT cname, ges_fld, object
             FROM node_results WHERE ges_type LIKE '%_BM') n 
-            ON (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname 
+            ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND l.cname = n.cname 
             AND l.{2} <> 'NaN') ORDER BY l.abundance_filename, l.wavelength,
             l.element, l.ion ASC""".format(element, ion, column))
 
@@ -595,7 +595,7 @@ class AbundancePlotting(object):
             """SELECT DISTINCT ON (l.spectrum_filename_stub) * FROM
             homogenised_line_abundances l JOIN (SELECT cname, ges_fld,
             object FROM node_results WHERE ges_type like '%_BM') n ON
-            (l.element = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
+            (trim(l.element) = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
             AND l.abundance <> 'NaN') ORDER BY l.spectrum_filename_stub"""\
             .format(element, ion)) if show_homogenised else None
 
@@ -663,6 +663,12 @@ class AbundancePlotting(object):
                     homogenised_y_data[wavelength].extend(group["abundance"][match] \
                             - benchmark.abundances[element][0])
                     homogenised_y_err[wavelength].extend(group["e_abundance"][match])
+                
+                # Arrayify!
+                homogenised_x_data[wavelength] = np.array(homogenised_x_data[wavelength])
+                homogenised_y_data[wavelength] = np.array(homogenised_y_data[wavelength])
+                homogenised_y_err[wavelength] = np.array(homogenised_y_err[wavelength])
+
         else:
             homogenised_x_data = {}
             homogenised_y_data = {}
@@ -733,10 +739,11 @@ class AbundancePlotting(object):
                     ax.set_yticklabels([])
 
                 ax.set_xlim(0, len(benchmarks))
-                ax.set_xticks(0.5 + np.arange(len(benchmarks)))
+                ax.set_xticks(np.arange(len(benchmarks)))
                 if ax.is_last_row():
                     ax.set_xticklabels([bm.name for bm in benchmarks],
-                        rotation=90)
+                        rotation=90, verticalalignment="top",
+                        horizontalalignment="left")
                 else:
                     ax.set_xticklabels([])
 
@@ -775,7 +782,7 @@ class AbundancePlotting(object):
 
             # Draw all homogenised values, if they exist.
             if homogenised_data is not None:
-                x = homogenised_x_data[wavelength]
+                x = 0.5 + homogenised_x_data[wavelength]
                 y = homogenised_y_data[wavelength]
                 yerr = homogenised_y_err[wavelength]
                 
@@ -855,7 +862,7 @@ class AbundancePlotting(object):
                 column))
 
         data = self.release.retrieve_table("""SELECT * FROM line_abundances
-            WHERE element = %s AND ion = %s AND {0} <> 'NaN'""".format(column),
+            WHERE trim(element) = %s AND ion = %s AND {0} <> 'NaN'""".format(column),
             (element, ion))
         if data is None: return
 
@@ -1102,7 +1109,7 @@ class AbundancePlotting(object):
         
         data = self.release.retrieve_table(
             """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
-            cname, {0} FROM node_results ORDER BY cname) n ON (l.element = %s 
+            cname, {0} FROM node_results ORDER BY cname) n ON (trim(l.element) = %s 
             AND l.ion = %s AND l.cname = n.cname) ORDER BY abundance_filename,
             wavelength ASC""".format(", ".join(set(columns))), (element, ion))
         if data is None: return            
@@ -1128,7 +1135,7 @@ class AbundancePlotting(object):
             homogenised_data = self.release.retrieve_table(
                 """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
                 DISTINCT ON (cname) cname, {0} FROM node_results ORDER BY cname)
-                n ON (l.element = %s AND l.ion = %s AND l.cname = n.cname)
+                n ON (trim(l.element) = %s AND l.ion = %s AND l.cname = n.cname)
                 ORDER BY wavelength ASC""".format(", ".join(set(columns))),
                     (element, ion))
             if homogenised_data is None:
@@ -1530,6 +1537,15 @@ class AbundancePlotting(object):
             ax.yaxis.set_major_locator(MaxNLocator(5))
     
         return fig
+
+
+    def homogenised_abundance_uncertainties(self, element, ion):
+        """
+        Draw histograms showing the distribution of uncertainties in each line
+        abundance for the given element.
+        """
+        raise NotImplementedError
+
 
 
 def latexify(label):

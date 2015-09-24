@@ -75,14 +75,14 @@ def match_node_abundances(database, element, ion, additional_columns=None,
     _ = "AND flags = 0" if not ignore_flags else ""
     if additional_columns is None: 
         measurements = data.retrieve_table(database,
-            """SELECT * FROM line_abundances WHERE element = %s AND ion = %s
+            """SELECT * FROM line_abundances WHERE trim(element) = %s AND ion = %s
             """ + _ + """ORDER BY node ASC""", (element, ion))
     else:
         # Match each star to the first distinct entry in the node_results table
         measurements = data.retrieve_table(database,
             """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
                 cname, """ + ", ".join(additional_columns) + """ FROM node_results ORDER BY cname) n 
-                ON (l.element = %s AND l.ion = %s AND l.cname = n.cname """ + _ + ")",
+                ON (trim(l.element) = %s AND l.ion = %s AND l.cname = n.cname """ + _ + ")",
                 (element, ion)) # TODO NAUGHTY
 
     measurements["wavelength"] \

@@ -58,7 +58,7 @@ class AbundanceBiases(object):
 
         measurements = self.release.retrieve_table(
             """SELECT * FROM line_abundances
-            WHERE element = '{0}' AND ion = '{1}' AND cname LIKE 'sssss%'"""\
+            WHERE trim(element) = '{0}' AND ion = '{1}' AND cname LIKE 'sssss%'"""\
             .format(element, ion))
 
         decimals = kwargs.pop("round_wavelengths", 1)
@@ -201,7 +201,7 @@ class AbundanceBiases(object):
         
         # Get the relevant line IDs
         ids = self.release.retrieve_column("""SELECT id FROM line_abundances
-            WHERE element = '{0}' AND ion = '{1}' AND node ILIKE '{2}%' 
+            WHERE trim(element) = '{0}' AND ion = '{1}' AND node ILIKE '{2}%' 
             AND wavelength > '{3}' AND wavelength < '{4}'""".format(
                 element, ion, node, wavelength - wavelength_tolerance,
                 wavelength + wavelength_tolerance), asarray=True)
