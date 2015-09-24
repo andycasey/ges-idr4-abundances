@@ -18,6 +18,7 @@ import data
 
 def calculate_differential_abundances(X, full_output=True):
     N_entries, N_nodes = X.shape
+    if N_nodes == 1: return (None, [])
     assert 30 > N_nodes, "Are you sure you gave X the right way around?"
     c = list(combinations(range(N_nodes), 2))
     Z = np.vstack([X[:, a] - X[:, b] for a, b in c]).T

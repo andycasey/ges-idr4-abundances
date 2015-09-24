@@ -87,12 +87,14 @@ class DataRelease(object):
 
         else:
             data = self.retrieve_table("""SELECT * FROM line_abundances l JOIN (
-                SELECT DISTINCT ON (cname), cname, {additional_columns} FROM
+                SELECT DISTINCT ON (cname) cname, {additional_columns} FROM
                 node_results ORDER BY cname) n ON (l.element = %s AND l.ion = %s
                 AND l.cname = n.cname {flag_query})""".format(
                 additional_columns=", ".join(additional_columns),
                 flag_query=flag_query), (element, ion))
 
+        if data is None: return (None, None, None)
+        
         nodes = sorted(set(data["node"]))
         wavelengths = sorted(set(data["wavelength"]))
 
