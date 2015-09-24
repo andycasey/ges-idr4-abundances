@@ -740,6 +740,8 @@ class AbundancePlotting(object):
                 else:
                     ax.set_xticklabels([])
 
+                if len(x_data[node]) == 0: continue
+
                 color = self.release.node_colors[node]
 
                 flagged = is_flagged[node]
@@ -855,6 +857,7 @@ class AbundancePlotting(object):
         data = self.release.retrieve_table("""SELECT * FROM line_abundances
             WHERE element = %s AND ion = %s AND {0} <> 'NaN'""".format(column),
             (element, ion))
+        if data is None: return
 
         nodes = sorted(set(data["node"]))
         wavelengths = sorted(set(data["wavelength"]))
@@ -927,13 +930,38 @@ class AbundancePlotting(object):
         node.
 
         :param element:
+            The element to show the mean abundances for.
+
+        :type element:
+            str
 
         :param ion:
+            The ionisation stage of the element to show mean abundances for (an
+            ionisation stage of 1 indicates neutral).
 
+        :type ion:
+            int
+
+        :param bins: [optional]
+            The bins to use in the histograms.
+
+        :type bins:
+            int or array of bin edges
+
+        :param extent: [optional]
+            The range in abundances to show.
+
+        :type extent:
+            None or two-length tuple
+
+        :returns:
+            A figure showing the mean abundances (as reported by the nodes), as
+            compared to all other nodes.
         """
 
         nodes = self.release.nodes
-        N_nodes = len(nodes), int(self.release.retrieve("""SELECT count(*) FROM
+        N_nodes = len(nodes)
+        N_entries = int(self.release.retrieve("""SELECT count(*) FROM
             node_results WHERE node = %s""", (nodes[0], ))[0][0])
 
         X = np.nan * np.ones((N_nodes, N_entries))
@@ -944,6 +972,11 @@ class AbundancePlotting(object):
             data = self.release.retrieve_table("""SELECT {0}, e_{0}
                 FROM node_results WHERE node = %s ORDER BY ra DESC, dec DESC,
                 cname DESC""".format(column), (node, ))
+
+            if data is None:
+                logger.warn("No node results found for node {0}".format(node))
+                continue
+            
             X[i, :] = data[column]
             X_uncertainties[i, :] = data["e_{}".format(column)]
             
@@ -958,8 +991,8 @@ class AbundancePlotting(object):
 
     def line_abundances(self, element, ion, reference_column, scaled=False,
         highlight_flagged=True, aux_column=None, x_extent=None, y_extent=None,
-        show_node_comparison=True, show_line_comparison=True,
-        abundance_format="log_x", **kwargs):
+        show_node_comparison=True, show_line_comparison=True, show_legend=False,
+        show_uncertainties=False, abundance_format="log_x", **kwargs):
         """
         Show the reference and relative abundances for a given element and ion
         against the reference column provided.
@@ -1025,6 +1058,14 @@ class AbundancePlotting(object):
         :type show_line_comparison:
             bool
 
+        :param show_legend: [optional]
+            Show a legend for the node and line comparisons. This will only be
+            displayed if both the show_line_comparison and show_node_comparison
+            options are also set to True.
+
+        :type show_legend:
+            bool
+
         :param abundance_format: [optional]
             The abundance format to display. Available options are 'log_x',
             'x_h', or 'x_fe'.
@@ -1033,7 +1074,199 @@ class AbundancePlotting(object):
             str
         """
 
-        None
+        # Ensure the reference column is valid.
+        reference_column = reference_column.lower()
+        _ = self.release.retrieve_table("SELECT * FROM node_results LIMIT 1")
+        if reference_column not in _.dtype.names:
+            raise ValueError(
+                "reference column '{0}' not valid (acceptable: {1})".format(
+                    reference_column, ", ".join(check.dtype.names)))
+
+        # Check the abundance format.
+        available = ("x_h", "x_fe", "log_x")
+        abundance_format = abundance_format.lower()
+        if abundance_format not in available:
+            raise ValueError(
+                "abundance format '{0}' is not valid (acceptable: {1})".format(
+                    abundance_format, ", ".join(available)))
+
+        columns = ["feh", reference_column]
+        if aux_column is not None: columns += [aux_column]
+        
+        data = self.release.retrieve_table(
+            """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
+            cname, {0} FROM node_results ORDER BY cname) n ON (l.element = %s 
+            AND l.ion = %s AND l.cname = n.cname) ORDER BY abundance_filename,
+            wavelength ASC""".format(", ".join(set(columns))), (element, ion))
+        if data is None: return            
+
+        scatter_kwds = {
+            "s": 50
+        }
+        if aux_column is not None:
+            scatter_kwds["cmap"] = colormaps.plasma
+            aux_extent = kwargs.pop("aux_extent", None)
+            if aux_extent is None:
+                scatter_kwds["vmin"] = np.nanmin(data[aux_column])
+                scatter_kwds["vmax"] = np.nanmax(data[aux_column])
+            else:
+                scatter_kwds["vmin"], scatter_kwds["vmax"] = aux_extent
+
+        nodes = sorted(set(data["node"]))
+        wavelengths = sorted(set(data["wavelength"]))
+        N_nodes, N_lines = len(nodes), len(wavelengths)
+
+        # Calculate figure size
+        xscale, yscale, wspace, hspace = 4.0, 1.5, 0.05, 0.10
+        lb, tr = 0.5, 0.2
+        xs = xscale * N_lines + xscale * (N_lines - 1) * wspace
+        ys = yscale * N_nodes + yscale * (N_nodes - 1) * hspace
+        x_aux = 0 if aux_column is None else 0.5 * xscale + 4 * wspace
+
+        xdim = lb * xscale + xs + x_aux + tr * xscale
+        ydim = lb * yscale + ys + tr * yscale
+
+        fig, axes = plt.subplots(N_nodes, N_lines, figsize=(xdim, ydim))
+        fig.subplots_adjust(
+            left=(lb * xscale)/xdim,
+            bottom=(lb * yscale)/ydim,
+            right=(lb * xscale + xs + x_aux)/xdim,
+            top=(tr * yscale + ys)/ydim,
+            wspace=wspace, hspace=hspace)
+
+        for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
+
+            match_wavelength = (data["wavelength"] == wavelength)
+            for j, (ax, node) in enumerate(zip(node_axes, nodes)):
+                # Get all measurements for this line by this node.
+                match_node = (data["node"] == node)
+                match = match_node * match_wavelength
+
+                x = data[reference_column][match]
+                y = data["abundance"][match]
+                
+                # Labels and titles
+                if ax.is_last_row():
+                    ax.set_xlabel(reference_column)
+
+                if ax.is_first_col():
+                    ax.set_ylabel(node)
+                
+                if ax.is_first_row():
+                    ax.set_title(wavelength)
+
+                if len(x) == 0: continue
+
+                if abundance_format == "x_h":
+                    y -= utils.solar_abundance(element)
+                elif abundance_format == "x_fe":
+                    y -= utils.solar_abundance(element) \
+                        + data["feh"][match].astype(float)
+
+                if aux_column is not None:
+                    scatter_kwds["c"] = data[aux_column][match]
+
+                scat = ax.scatter(x, y, **scatter_kwds)
+                if show_uncertainties:
+                    raise NotImplementedError
+
+        comparison_scatter_kwds = {
+            "s": 25,
+            "c": "#EEEEEE",
+            "zorder": -1,
+            "marker": "v",
+            "alpha": 0.5,
+            "edgecolor": "#BBBBBB"
+        }
+
+        # Show all other measurements for this line (from all nodes).
+        if show_line_comparison: 
+            for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
+                match = (data["wavelength"] == wavelength)
+                x = data[reference_column][match]
+                y = data["abundance"][match]
+                if abundance_format == "x_h":
+                    y -= utils.solar_abundance(element)
+                elif abundance_format == "x_fe":
+                    y -= utils.solar_abundance(element) \
+                        + data["feh"][match].astype(float)
+
+                if len(x) == 0: continue
+
+                for j, ax in enumerate(node_axes):
+                    ax.scatter(x, y, label="Common line", 
+                        **comparison_scatter_kwds)
+
+        comparison_scatter_kwds["marker"] = "s"
+        if show_node_comparison:
+            for i, (line_axes, node) in enumerate(zip(axes, nodes)):
+                match = (data["node"] == node)
+                x = data[reference_column][match]
+                y = data["abundance"][match]
+                if abundance_format == "x_h":
+                    y -= utils.solar_abundance(element)
+                elif abundance_format == "x_fe":
+                    y -= utils.solar_abundance(element) \
+                        + data["feh"][match].astype(float)
+
+                if len(x) == 0: continue
+
+                for j, ax in enumerate(line_axes):
+                    ax.scatter(x, y, label="Common node", 
+                        **comparison_scatter_kwds)
+
+        if show_node_comparison and show_line_comparison and show_legend:
+            axes.T[0][0].legend(loc="upper left", frameon=True, fontsize=12)
+
+        # Common x- and y-axis limits.
+        x_limits = [+np.inf, -np.inf]
+        y_limits = [+np.inf, -np.inf]
+        for ax in axes.flatten():
+            if sum([_.get_offsets().size for _ in ax.collections]) == 0:
+                continue
+
+            proposed_x_limits = ax.get_xlim()
+            proposed_y_limits = ax.get_ylim()
+
+            if proposed_x_limits[0] < x_limits[0]:
+                x_limits[0] = proposed_x_limits[0]
+            if proposed_y_limits[0] < y_limits[0]:
+                y_limits[0] = proposed_y_limits[0]
+            if proposed_x_limits[1] > x_limits[1]:
+                x_limits[1] = proposed_x_limits[1]
+            if proposed_y_limits[1] > y_limits[1]:
+                y_limits[1] = proposed_y_limits[1]
+
+        y_limits = y_extent or y_limits
+        x_limits = x_extent or x_limits
+        for ax in axes.flatten():
+            ax.set_xlim(x_limits)
+            ax.set_ylim(y_limits)
+            ax.xaxis.set_major_locator(MaxNLocator(5))
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+
+            if not ax.is_last_row(): ax.set_xticklabels([])
+            if not ax.is_first_col(): ax.set_yticklabels([])
+
+        if aux_column is not None:
+            cbar = plt.colorbar(scat, ax=list(axes.flatten()))
+            cbar.set_label(aux_column)
+            _ = axes.T[-1][0].get_position().bounds
+            cbar.ax.set_position([
+                (lb*xscale + xs + 4*wspace)/xdim, 
+                axes.T[-1][-1].get_position().bounds[1],
+                (lb*xscale + xs + x_aux)/xdim,
+                axes.T[-1][0].get_position().y1 - axes.T[-1][-1].get_position().y0
+                ])
+
+            fig.subplots_adjust(
+                left=(lb * xscale)/xdim,
+                bottom=(lb * yscale)/ydim,
+                right=(lb * xscale + xs)/xdim,
+                top=(tr * yscale + ys)/ydim,
+                wspace=wspace, hspace=hspace)
+
+        raise NotImplementedError
 
 
 def latexify(label):
