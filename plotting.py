@@ -1156,6 +1156,7 @@ class AbundancePlotting(object):
             right=(lb * xscale + xs + x_aux)/xdim,
             top=(tr * yscale + ys)/ydim,
             wspace=wspace, hspace=hspace)
+        axes = np.atleast_2d(axes)
 
         for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
 
