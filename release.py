@@ -31,7 +31,7 @@ class DataRelease(object):
         Initiate the data release object.
 
         """
-
+        
         self._database = pg.connect(database=database,
             user=user, password=password, host=host, **kwargs)
 
@@ -86,10 +86,11 @@ class DataRelease(object):
                 (element, ion))
 
         else:
-            data = self.retrieve_table("""SELECT * FROM line_abundances l JOIN (
-                SELECT DISTINCT ON (cname) cname, {additional_columns} FROM
-                node_results ORDER BY cname) n ON (trim(l.element) = %s AND l.ion = %s
-                AND l.cname = n.cname {flag_query})""".format(
+            data = self.retrieve_table("""SELECT * FROM line_abundances l
+                JOIN (SELECT DISTINCT ON (cname) cname, {additional_columns} 
+                    FROM node_results ORDER BY cname) n 
+                ON (trim(l.element) = %s AND l.ion = %s
+                    AND l.cname = n.cname {flag_query})""".format(
                 additional_columns=", ".join(additional_columns),
                 flag_query=flag_query), (element, ion))
 
@@ -121,8 +122,8 @@ class DataRelease(object):
         tol = self.config.wavelength_tolerance
         measurements = self.retrieve_table(
             "SELECT node, spectrum_filename_stub, " + column + \
-            """ FROM line_abundances
-            WHERE trim(element) = %s AND ion = %s {flag_query} AND wavelength >= %s
+            """ FROM line_abundances WHERE trim(element) = %s
+            AND ion = %s {flag_query} AND wavelength >= %s
             AND wavelength <= %s""".format(
                 flag_query="AND flags = 0" if not include_flagged_lines else ""),
                 (element, ion, wavelength - tol, wavelength + tol))
@@ -308,9 +309,3 @@ class DataRelease(object):
 
         rows = self.retrieve(query, values)
         return rows if not asarray else np.array(rows).flatten()
-
-
-if __name__ == "__main__":
-
-    ges = DataRelease("arc")
-

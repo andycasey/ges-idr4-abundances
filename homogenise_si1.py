@@ -1,55 +1,43 @@
 
-''' Produce ensemble Si 1 abundances from the Gaia-ESO Survey iDR4 WG11 data '''
+""" Produce ensemble Si 1 abundances from the Gaia-ESO Survey iDR4 WG11 data """
 
 __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
-import psycopg2 as pg
-import biases, flags, homogenise, plot
-
-
-kwds = {
-    "host": "/tmp/",
-    "dbname": "arc",
-    "user": "arc",
-    "password": "password"
-}
-
-db = pg.connect(**kwds)
+import release
 
 element, ion = ("Si", 1)
+ges = release.DataRelease("arc")
 
 # Flag any lines that should be discarded, from specific nodes?
-flag_id = flags.retrieve_or_create_line_abundance_flag(db,
-    "Abundance is non-physical")
-num_rows = flags.update_line_abundance_flag(db, [flag_id],
+flag_id = ges.flags.retrieve_or_create("Abundance is non-physical")
+num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
         (abundance > 9 OR abundance < 5)""".format(element, ion))
 
 # Use only a subset of trustworthy lines for all stars.
-flag_id = flags.retrieve_or_create_line_abundance_flag(db,
-    "Transition excluded by most nodes")
-num_rows = flags.update_line_abundance_flag(db, [flag_id],
+flag_id = ges.flags.retrieve_or_create("Transition excluded by most nodes")
+num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
     (wavelength < 4431.8 OR 
     (wavelength > 5772.1 AND wavelength < 6721.7))""".format(element, ion))
 
 # Calculate biases and apply them.
-species_biases = biases.differential_abundance_biases(db, element, ion)
+species_biases = ges.biases.differential(element, ion)
 for node in species_biases:
     for wavelength, (bias, sigma, N) in species_biases[node].items():
-        rows = biases.apply_offset(db, element, ion, node, wavelength, -bias)
-
-# Produce some figures.
-fig = plot.differential_line_abundances(db, element, ion, scaled=True,
-    ignore_flags=False)
-fig.savefig("figures/{0}{1}/scaled-differential-line-abundances.png".format(
-    element.upper(), ion))
-
-fig = plot.compare_solar(db, element, ion, scaled=True, ignore_flags=False)
-fig.savefig("figures/{0}{1}/scaled-compare-solar.png".format(element.upper(),
-    ion))
+        rows = ges.biases.apply_offset(element, ion, node, wavelength, -bias)
 
 # Perform the homogenisation.
-result = homogenise.species(db, element, ion)
+result = ges.homogenise.species(element, ion)
 
+# Produce some figures.
+fig = ges.plot.differential_line_abundances(element, ion, scaled=True)
+fig.savefig("figures/{0}/scaled-differential-line-abundances.png".format(_))
 
+fig = ges.plot.solar_comparison(element, ion, scaled=True)
+fig.savefig("figures/{0}/scaled-compare-solar.png".format(_))
+
+_ = "{0}{1}".format(element.upper(), ion)
+fig = ges.plot.benchmark_line_abundances(element, ion, "benchmarks.yaml",
+    scaled=True)
+fig.savefig("figures/{0}/scaled-benchmark-line-abundances.png".format(_))

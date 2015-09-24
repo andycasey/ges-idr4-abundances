@@ -72,16 +72,18 @@ class AbundancePlotting(object):
         """
 
         measurements = self.release.retrieve_table(
-            """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) 
-            cname, snr FROM node_results ORDER BY cname) n ON (trim(l.element) = '{0}'
-            AND l.ion = '{1}' AND l.cname = n.cname AND l.cname LIKE 'ssssss%')
-            """.format(element, ion))
+            """SELECT * FROM line_abundances l JOIN
+            (SELECT DISTINCT ON (cname) cname, snr FROM node_results
+            ORDER BY cname) n ON (trim(l.element) = '{0}'
+                AND l.ion = '{1}' AND l.cname = n.cname
+                AND l.cname LIKE 'ssssss%')""".format(element, ion))
         if measurements is None: return None
 
         homogenised_measurements = self.release.retrieve_table(
-            """SELECT * FROM homogenised_line_abundances l JOIN (SELECT
-            DISTINCT ON (cname) cname, snr FROM node_results ORDER BY cname)
-            n ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
+            """SELECT * FROM homogenised_line_abundances l JOIN
+            (SELECT DISTINCT ON (cname) cname, snr 
+                FROM node_results ORDER BY cname) n 
+            ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND l.cname = n.cname
             AND l.cname LIKE 'ssssss%')""".format(element, ion)) \
             if show_homogenised else None
 
@@ -223,7 +225,8 @@ class AbundancePlotting(object):
         """
 
         data = self.release.retrieve_table("""SELECT * FROM line_abundances
-            WHERE trim(element) = %s AND ion = %s {flag_query} ORDER BY wavelength ASC
+            WHERE trim(element) = %s AND ion = %s {flag_query}
+            ORDER BY wavelength ASC
             """.format(flag_query="AND flags = 0" if ignore_flagged else ""),
             (element, ion))
         if data is None: return
@@ -255,7 +258,7 @@ class AbundancePlotting(object):
             right=(lb * scale + xs)/xdim,
             top=(tr * scale + ys)/ydim,
             wspace=wspace, hspace=hspace)
-
+        axes = np.atleast_2d(axes)
 
         bin_min, bin_max = absolute_abundance_extent \
             or (data[column].min(), data[column].max())
@@ -471,20 +474,21 @@ class AbundancePlotting(object):
                 continue
 
             measurements = self.release.retrieve_table(
-                """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON
-                (cname) cname, snr, ges_fld, ges_type, object FROM node_results
-                ORDER BY cname) n ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND
-                l.cname = n.cname AND ges_type LIKE '%_BM' AND
-                (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
+                """SELECT * FROM line_abundances l JOIN 
+                (SELECT DISTINCT ON (cname) cname, snr, ges_fld, ges_type, object
+                    FROM node_results ORDER BY cname) n
+                ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND
+                    l.cname = n.cname AND ges_type LIKE '%_BM' AND
+                    (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
                     element, ion, benchmark.name))
             
             homogenised_measurements = self.release.retrieve_table(
                 """SELECT * FROM homogenised_line_abundances l 
                 JOIN (SELECT DISTINCT ON (cname) cname, snr, ges_fld, ges_type,
-                object FROM node_results ORDER BY cname) n
+                    object FROM node_results ORDER BY cname) n
                 ON (trim(l.element) = '{0}' AND l.ion = '{1}' AND
-                l.cname = n.cname AND ges_type LIKE '%_BM' AND
-                (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
+                    l.cname = n.cname AND ges_type LIKE '%_BM' AND
+                    (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
                     element, ion, benchmark.name)) if show_homogenised else None
 
             figures[benchmark.name] = _compare_repeat_spectra(measurements,
@@ -619,6 +623,7 @@ class AbundancePlotting(object):
             bottom=(lb * escale)/ydim,
             top=(tr * escale + ys)/ydim,
             wspace=xspace, hspace=yspace)
+        axes = np.atleast_2d(axes)
 
         scatter_kwds = {
             "s": 50,
@@ -659,15 +664,23 @@ class AbundancePlotting(object):
 
                     if len(match) == 0: continue
 
-                    homogenised_x_data[wavelength].extend(j * np.ones(len(match)))
-                    homogenised_y_data[wavelength].extend(group["abundance"][match] \
+                    homogenised_x_data[wavelength].extend(
+                        j * np.ones(len(match)))
+                    homogenised_y_data[wavelength].extend(
+                        group["abundance"][match] \
                             - benchmark.abundances[element][0])
-                    homogenised_y_err[wavelength].extend(group["e_abundance"][match])
+                    homogenised_y_err[wavelength].extend(
+                        group["e_abundance"][match])
                 
                 # Arrayify!
-                homogenised_x_data[wavelength] = np.array(homogenised_x_data[wavelength])
-                homogenised_y_data[wavelength] = np.array(homogenised_y_data[wavelength])
-                homogenised_y_err[wavelength] = np.array(homogenised_y_err[wavelength])
+                
+            for wavelength in wavelengths:
+                homogenised_x_data[wavelength] \
+                    = np.array(homogenised_x_data[wavelength])
+                homogenised_y_data[wavelength] \
+                    = np.array(homogenised_y_data[wavelength])
+                homogenised_y_err[wavelength] \
+                    = np.array(homogenised_y_err[wavelength])
 
         else:
             homogenised_x_data = {}
@@ -688,6 +701,7 @@ class AbundancePlotting(object):
 
                 # Either matches on OBJECT or GES_FLD
                 name = benchmark.name.lower()
+                # TODO do this better
                 group["ges_fld"] = map(str.strip, map(str.lower, group["ges_fld"]))
                 group["1.object"] = map(str.strip, map(str.lower, group["1.object"]))
                 match = np.array([k for k, row in enumerate(group) \
@@ -862,8 +876,8 @@ class AbundancePlotting(object):
                 column))
 
         data = self.release.retrieve_table("""SELECT * FROM line_abundances
-            WHERE trim(element) = %s AND ion = %s AND {0} <> 'NaN'""".format(column),
-            (element, ion))
+            WHERE trim(element) = %s
+            AND ion = %s AND {0} <> 'NaN'""".format(column), (element, ion))
         if data is None: return
 
         nodes = sorted(set(data["node"]))
@@ -1108,10 +1122,12 @@ class AbundancePlotting(object):
         if aux_column is not None: columns += [aux_column]
         
         data = self.release.retrieve_table(
-            """SELECT * FROM line_abundances l JOIN (SELECT DISTINCT ON (cname)
-            cname, {0} FROM node_results ORDER BY cname) n ON (trim(l.element) = %s 
-            AND l.ion = %s AND l.cname = n.cname) ORDER BY abundance_filename,
-            wavelength ASC""".format(", ".join(set(columns))), (element, ion))
+            """SELECT * FROM line_abundances l JOIN 
+            (SELECT DISTINCT ON (cname) cname, {0} FROM node_results 
+                ORDER BY cname) n
+            ON (trim(l.element) = %s AND l.ion = %s AND l.cname = n.cname)
+            ORDER BY abundance_filename, wavelength ASC""".format(
+                ", ".join(set(columns))), (element, ion))
         if data is None: return            
 
         scatter_kwds = {
@@ -1320,7 +1336,8 @@ class AbundancePlotting(object):
                 (lb*xscale + xs + 4*wspace)/xdim, 
                 axes.T[-1][-1].get_position().bounds[1],
                 (lb*xscale + xs + x_aux)/xdim,
-                axes.T[-1][0].get_position().y1 - axes.T[-1][-1].get_position().y0
+                axes.T[-1][0].get_position().y1 - \
+                    axes.T[-1][-1].get_position().y0
                 ])
 
             fig.subplots_adjust(
@@ -1397,8 +1414,8 @@ class AbundancePlotting(object):
             two-length tuple of floats
 
         :returns:
-            A figure showing the differential line abundances against the requested
-            parameter.
+            A figure showing the differential line abundances against the 
+            requested parameter.
         """
 
         # Get the full distribution of abundances.
@@ -1446,6 +1463,7 @@ class AbundancePlotting(object):
             bottom=(lb * escale)/ydim,
             top=(tr * escale + ys)/ydim,
             wspace=xspace, hspace=yspace)
+        axes = np.atleast_2d(axes)
 
         # Get the common bin sizes.
         x_min, x_max = x_extent or (
@@ -1539,13 +1557,81 @@ class AbundancePlotting(object):
         return fig
 
 
-    def homogenised_abundance_uncertainties(self, element, ion):
+    def homogenised_abundance_uncertainties(self, element, ion, bins=50,
+        x_extent=(0, 0.25)):
         """
         Draw histograms showing the distribution of uncertainties in each line
         abundance for the given element.
-        """
-        raise NotImplementedError
 
+        :param element:
+            The elemental abundance of interest.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element of interest (1 = neutral).
+
+        :type ion:
+            int
+
+        :param bins: [optional]
+            The number of bins to have. The default number is 20.
+
+        :type bins:
+            int
+
+        :param x_extent: [optional]
+            The range of values to display in the x-axis.
+
+        :type x_extent:
+            None or two-length tuple
+
+        :returns:
+            A single-panel figure showing the distributions of homogenised
+            abundance uncertainties for the given element.
+        """
+
+        # Get all of the homogenised line data for this element and ion.
+        data = self.release.retrieve_table(
+            """SELECT wavelength, e_abundance FROM homogenised_line_abundances
+            WHERE TRIM(element) = %s AND ion = %s AND e_abundance <> 'NaN'
+            ORDER BY wavelength ASC""", (element, ion))
+        if data is None: return None
+
+        data = data.group_by(["wavelength"])
+
+        extent = x_extent \
+            or (np.nanmin(data["e_abundance"]), np.nanmax(data["e_abundance"]))
+        bins = np.linspace(extent[0], extent[1], 1 + bins)
+
+        hist_kwargs = {
+            "color": "#666666",
+            "histtype": "step",
+            "bins": bins,
+            "normed": True
+        }
+        fig, ax = plt.subplots(1)
+
+        for group in data.groups:
+            ax.hist(group["e_abundance"], **hist_kwargs)
+
+        # Show the full distribution as a thick line.
+        hist_kwargs.update({
+            "lw": 3,
+            "color": "k"
+        })
+        hist_kwargs["lw"] = 3
+        ax.hist(data["e_abundance"], **hist_kwargs)
+
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+
+        ax.set_xlabel(r"$\sigma_{" + element + "\,{0}".format(ion) \
+            + r"}$ $({\rm dex})$")
+        ax.set_ylabel("Normalised count")
+
+        return fig
 
 
 def latexify(label):
@@ -1581,7 +1667,8 @@ def _corner_scatter(data, labels=None, uncertainties=None, extent=None,
     dim = lbdim + plotdim + trdim
 
     fig, axes = plt.subplots(K, K, figsize=(dim, dim))
-    
+    axes = np.atleast_2d(axes)
+
     lb = lbdim / dim
     tr = (lbdim + plotdim) / dim
     fig.subplots_adjust(left=lb, bottom=lb, right=tr, top=tr,
@@ -1724,6 +1811,7 @@ def _compare_repeat_spectra(measurements, colors, homogenised_measurements=None,
         right=(lb * scale + xs)/xdim,
         top=(tr * scale + ys)/ydim,
         wspace=wspace, hspace=hspace)
+    axes = np.atleast_2d(axes)
 
     flagged = measurements["flags"] > 0
     for i, (wavelength, (ax_hist, ax_snr)) in enumerate(zip(wavelengths, axes)):
