@@ -376,7 +376,7 @@ def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
     N_measurements = np.isfinite(measurements[column]).sum()
 
     if N_measurements == 0:
-        return (np.nan, np.nan, 0, -1)
+        return (np.nan, np.nan, -1)
 
     # Problems to address later:
     assert np.all(measurements["upper_abundance"] == 0)

@@ -307,6 +307,9 @@ class AbundancePlotting(object):
         # Calculate the full differential abundances.
         X_diff, indices = utils.calculate_differential_abundances(X,
             full_output=True)
+        if X_diff is None:
+            return fig
+
         X_diff = X_diff[np.isfinite(X_diff)]
 
         b_min, b_max = differential_abundance_extent \
