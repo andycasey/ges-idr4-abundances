@@ -41,13 +41,10 @@ for node in species_biases:
 ges.homogenise.species(element, ion)
 
 # Produce some figures.
-fig = plot.differential_line_abundances(ges._database, element, ion, scaled=True,
-    ignore_flags=False)
+fig = ges.plot.differential_line_abundances(element, ion, scaled=True)
 fig.savefig("figures/{0}{1}/scaled-differential-line-abundances.png".format(
     element.upper(), ion))
 
-fig = plot.compare_solar(ges._database, element, ion, scaled=True, ignore_flags=False)
+fig = ges.plot.solar_comparison(element, ion, scaled=True)
 fig.savefig("figures/{0}{1}/scaled-compare-solar.png".format(element.upper(),
     ion))
-
-raise a 
