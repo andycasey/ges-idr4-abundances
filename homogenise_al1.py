@@ -1,15 +1,13 @@
 
-''' Produce ensemble Al 1 abundances from the Gaia-ESO Survey iDR4 WG11 data '''
+""" Produce ensemble Al 1 abundances from the Gaia-ESO Survey iDR4 WG11 data """
 
 __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
 
 import release
-import plot
 
-
-element, ion = ("Al", 1)
-ges = release.DataRelease("arc")
+database, element, ion = ("arc", "Al", 1)
+ges = release.DataRelease(database)
 
 
 # Flag any lines that should be discarded, from specific nodes?
@@ -25,11 +23,22 @@ num_rows = ges.flags.update([flag_id],
     AND node ILIKE 'MyGIsFOS%' AND wavelength > 6696.1 AND wavelength < 6696.2
     AND flags = 0""".format(element, ion))
 
+# The Al 1 line at 6696.8 is not great for analysis.
+flag_id = ges.flags.retrieve_or_create(
+    "Not an ideal line for analysis")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND 
+    wavelength > 6696.7 AND wavelength < 6696.9 AND abundance != 'NaN'""".format(
+        element, ion))
+
 # Calculate biases and apply them.
 species_biases = ges.biases.differential(element, ion)
 for node in species_biases:
     for wavelength, (bias, sigma, N) in species_biases[node].items():
         rows = ges.biases.apply_offset(element, ion, node, wavelength, -bias)
+
+# Perform the homogenisation.
+ges.homogenise.species(element, ion)
 
 # Produce some figures.
 fig = plot.differential_line_abundances(ges._database, element, ion, scaled=True,
@@ -40,17 +49,5 @@ fig.savefig("figures/{0}{1}/scaled-differential-line-abundances.png".format(
 fig = plot.compare_solar(ges._database, element, ion, scaled=True, ignore_flags=False)
 fig.savefig("figures/{0}{1}/scaled-compare-solar.png".format(element.upper(),
     ion))
-
-# Perform the homogenisation.
-ges.homogenise.species(element, ion)
-
-#result = homogenise.species(db, element, ion)
-
-# Produce comparison figures.
-
-# - node-to-node scatter plot
-# - benchmark comparison
-# - bensby comparison
-# - 
 
 raise a 
