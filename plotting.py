@@ -314,6 +314,29 @@ class AbundancePlotting(object):
         hist_kwds["bins"] = np.linspace(b_min, b_max, bins + 1)
 
         for i, (ax, wavelength) in enumerate(zip(axes.T[1], wavelengths)):
+            ax.set_title(latexify(wavelength))
+            ax.xaxis.set_major_locator(MaxNLocator(5))
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+            if not ax.is_last_row():
+                ax.set_xticklabels([])
+            else:
+                ax.set_xlabel(r"$\Delta${0} {1}".format(element, ion))
+
+            match = diff_data["wavelength"] == wavelength
+            X_diff_wavelength = utils.calculate_differential_abundances(
+                X[match], full_output=False).flatten()
+
+            ax.text(0.95, 0.95, latexify(X_diff.size), transform=ax.transAxes,
+                verticalalignment="top", horizontalalignment="right",
+                color=full_distribution_color)
+            ax.text(0.95, 0.95, 
+                latexify("\n{}".format(np.isfinite(X_diff_wavelength).sum())),
+                verticalalignment="top", horizontalalignment="right",
+                color=comp_distribution_color, transform=ax.transAxes)
+
+            if X_diff.size == 0:
+                continue
+
             if ax.is_first_row():
                 ax.text(0.05, 0.95,
                     r"$\mu = {0:.2f}$" "\n" r"$\sigma = {1:.2f}$".format(
@@ -324,29 +347,11 @@ class AbundancePlotting(object):
             # Show the full distribution of differential abundances.
             ax.hist(X_diff, color=full_distribution_color, **hist_kwds)
 
-            # Show the distribution of differential abundances for this wavelength.
-            match = diff_data["wavelength"] == wavelength
-            X_diff_wavelength = utils.calculate_differential_abundances(X[match],
-                full_output=False).flatten()
+            # Show the distribution of differential abundances for this 
+            # wavelength.
             if np.isfinite(X_diff_wavelength).sum() > 0:
                 ax.hist(X_diff_wavelength, color=comp_distribution_color,
                     **hist_kwds)
-
-            ax.set_title(latexify(wavelength))
-            ax.xaxis.set_major_locator(MaxNLocator(5))
-            ax.yaxis.set_major_locator(MaxNLocator(5))
-            if not ax.is_last_row():
-                ax.set_xticklabels([])
-            else:
-                ax.set_xlabel(r"$\Delta${0} {1}".format(element, ion))
-
-            ax.text(0.95, 0.95, latexify(X_diff.size), transform=ax.transAxes,
-                verticalalignment="top", horizontalalignment="right",
-                color=full_distribution_color)
-            ax.text(0.95, 0.95, 
-                latexify("\n{}".format(np.isfinite(X_diff_wavelength).sum())),
-                verticalalignment="top", horizontalalignment="right",
-                color=comp_distribution_color, transform=ax.transAxes)
             
         # Plot the node-to-node distribution of the differential abundances.
         # Node X compared to all others
@@ -1441,9 +1446,13 @@ class AbundancePlotting(object):
 
         N_original_wavelengths = len(set(data_table["wavelength"]))
         if N_original_wavelengths > N_wavelengths:
-            logger.warn("{0} wavelengths not shown because there are no "\
-                "differential measurements".format(
-                    N_original_wavelengths - N_wavelengths))
+            logger.warn("{0} of {1} wavelengths not shown because there are no"\
+                " differential measurements".format(
+                    N_original_wavelengths - N_wavelengths,
+                    N_original_wavelengths))
+
+        if 0 in (N_nodes, N_wavelengths):
+            return None
 
         # Create a figure of the right dimensions.
         Nx, Ny = 1 + N_nodes, N_wavelengths
