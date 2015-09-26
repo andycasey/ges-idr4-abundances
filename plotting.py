@@ -303,7 +303,7 @@ class AbundancePlotting(object):
         # (but first,..) determine the full matrix of differential abundances.
         X, nodes, diff_data = self.release._match_species_abundances(element,
             ion, scaled=scaled, include_flagged_lines=not ignore_flagged)
-
+        
         # Calculate the full differential abundances.
         X_diff, indices = utils.calculate_differential_abundances(X,
             full_output=True)
@@ -1432,10 +1432,9 @@ class AbundancePlotting(object):
             include_flagged_lines=not ignore_flagged)
         if X is None: return None
 
-        nodes = sorted(set(data_table["node"]))
         if len(nodes) == 1:
-            logger.warn("Only one node present. Differential abundances are not"
-                " available")
+            logger.warn(
+                "Only one node present; differential abundances are unavailable")
             return None
 
         # Calculate differential abundances.
@@ -1505,7 +1504,7 @@ class AbundancePlotting(object):
         for i, (row_axes, wavelength) in enumerate(zip(axes, wavelengths)):
 
             # First one should contain *everything* in a greyscale.
-            full_ax, node_axes = row_axes[0], row_axes[1:] #I should switch to Py3
+            full_ax, node_axes = row_axes[0], row_axes[1:]
 
             # For the full axes we have to repeat the x-axis data.
             mask = data_table["wavelength"] == wavelength
@@ -1538,22 +1537,21 @@ class AbundancePlotting(object):
                 ax.set_yticklabels([])
                 if ax.is_first_row():
                     ax.set_title(node.strip())
-
                 if ax.is_last_row():
                     ax.set_xlabel(parameter)
                 else:
                     ax.set_xticklabels([])
 
-
                 # Get all the differential abundances for this node.
                 # Recall Nx = 1 + len(nodes) t.f. len(nodes) - 1 = Nx - 2
-                # Ned the node_y abundances to be log_x(NODE A) - log_x(ALL OTHERS)
-                node_x = np.tile(data_table[parameter].astype(float)[mask], Nx - 2)
-                node_y = np.hstack([
-                    [+1, -1][j == idx[0]] * differential_abundances[mask, k] \
-                    for k, idx in enumerate(indices) if j in idx])
-
+                node_x \
+                    = np.tile(data_table[parameter].astype(float)[mask], Nx - 2)
                 if len(node_x) == 0: continue
+                
+                # Need the node_y abundances to be log_x(NODE A) - log_x(ALL)
+                node_y = np.hstack([
+                    [-1, +1][j == idx[0]] * differential_abundances[mask, k] \
+                    for k, idx in enumerate(indices) if j in idx])
 
                 H, xe, ye = np.histogram2d(node_x, node_y, **histogram_kwds)
                 Z = np.log(1 + H.T) if logarithmic else H.T
@@ -1565,7 +1563,7 @@ class AbundancePlotting(object):
         for ax in axes.flatten():
             ax.xaxis.set_major_locator(MaxNLocator(5))
             ax.yaxis.set_major_locator(MaxNLocator(5))
-    
+        
         return fig
 
 

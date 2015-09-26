@@ -112,7 +112,6 @@ class DataRelease(object):
 
         # Return any other data.
         data = data[data.groups.indices[:-1]]
-        # TODO: CHECK LINE ABOVE
         return (X, nodes, data)
 
 
