@@ -5,9 +5,8 @@ __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
 import release
 
-
-element, ion = ("Si", 2)
-ges = release.DataRelease("arc")
+database, element, ion = ("arc", "Si", 2)
+ges = release.DataRelease(database)
 
 # Flag any lines that should be discarded, from specific nodes?
 flag_id = ges.flags.retrieve_or_create("Abundance is non-physical")
@@ -26,7 +25,6 @@ species_biases = ges.biases.differential(element, ion)
 for node in species_biases:
     for wavelength, (bias, sigma, N) in species_biases[node].items():
         rows = ges.biases.apply_offset(element, ion, node, wavelength, -bias)
-
 
 # Perform the homogenisation.
 result = ges.homogenise.species(element, ion)
