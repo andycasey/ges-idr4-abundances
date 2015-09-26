@@ -1,22 +1,25 @@
 
-""" Produce ensemble Zn 1 abundances from the Gaia-ESO Survey iDR4 WG11 data """
+""" Produce ensemble Na 1 abundances from the Gaia-ESO Survey iDR4 WG11 data """
 
 __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
 
 import release
 
-database, element, ion = ("arc", "Zn", 1)
+database, element, ion = ("arc", "Na", 1)
 ges = release.DataRelease(database)
 
-# ULB returned a large abundance value for one star
-flag_id = ges.flags.retrieve_or_create("Abundance is non-physical")
+# Lines bluer than 4982.8 are generally only measured in a few stars by one node
+flag_id = ges.flags.retrieve_or_create(
+    "Not an ideal line for analysis")
 num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
-        (abundance > 7.5)""".format(element, ion))
+    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
+    AND wavelength < 4982""".format(element, ion))
 
-# Only two lines present (4810.5 and 6362.3) and even though the abundances are
-# generally offset from each other, they look sensible.
+# The 5890.0 and 5895.9 lines show a lot of scatter and irregularities.
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
+    AND wavelength > 5789 AND wavelength < 5896""".format(element, ion))
 
 # Calculate biases and apply them.
 species_biases = ges.biases.differential(element, ion)
