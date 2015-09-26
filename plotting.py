@@ -303,7 +303,7 @@ class AbundancePlotting(object):
         # (but first,..) determine the full matrix of differential abundances.
         X, nodes, diff_data = self.release._match_species_abundances(element,
             ion, scaled=scaled, include_flagged_lines=not ignore_flagged)
-        
+
         # Calculate the full differential abundances.
         X_diff, indices = utils.calculate_differential_abundances(X,
             full_output=True)
@@ -1718,7 +1718,7 @@ def _corner_scatter(data, labels=None, uncertainties=None, extent=None,
 
                 diff = (data[i] - data[indices]).flatten()
                 diff = diff[np.isfinite(diff)]
-                if diff.size:
+                if diff.size and any((bins[-1] > diff) * (diff > bins[0])):
                     ax.hist(diff, bins=bins, **hist_kwargs)
                 
             else:    
