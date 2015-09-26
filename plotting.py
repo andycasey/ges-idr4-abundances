@@ -237,7 +237,7 @@ class AbundancePlotting(object):
         if not any(use): return None
 
         data = data[use]
-        wavelengths = set(data["wavelength"])
+        wavelengths = sorted(set(data["wavelength"]))
 
         K, N_lines = 3, len(wavelengths)
 
