@@ -476,9 +476,9 @@ class AbundancePlotting(object):
         for benchmark in utils.load_benchmarks(benchmark_filename):
 
             if element not in benchmark.abundances:
+                figures[benchmark.name] = None
                 logger.warn("No elemental abundance for {0} in {1}".format(
                     element, benchmark.name))
-                figures[benchmark.name] = None
                 continue
 
             measurements = self.release.retrieve_table(
@@ -489,7 +489,12 @@ class AbundancePlotting(object):
                     l.cname = n.cname AND ges_type LIKE '%_BM' AND
                     (ges_fld ILIKE '{2}%' OR n.object ILIKE '{2}%'))""".format(
                     element, ion, benchmark.name))
-            
+            if measurements is None:
+                figures[benchmark.name] = None
+                logger.warn("No {0} {1} measurements for benchmarks".format(
+                    element, ion))
+                continue
+
             homogenised_measurements = self.release.retrieve_table(
                 """SELECT * FROM homogenised_line_abundances l 
                 JOIN (SELECT DISTINCT ON (cname) cname, snr, ges_fld, ges_type,
@@ -988,6 +993,13 @@ class AbundancePlotting(object):
             compared to all other nodes.
         """
 
+        # Check that the column is actually in the node results table!
+        column = "{0}{1}".format(element.lower(), ion)
+        check = self.release.retrieve_table("SELECT * FROM node_results LIMIT 1")
+        if column not in check.dtype.names:
+            logger.warn("Column {0} not in node_results table".format(column))
+            return None
+
         nodes = self.release.nodes
         N_nodes = len(nodes)
         N_entries = int(self.release.retrieve("""SELECT count(*) FROM
@@ -996,7 +1008,7 @@ class AbundancePlotting(object):
         X = np.nan * np.ones((N_nodes, N_entries))
         X_uncertainties = X.copy()
         
-        column = "{0}{1}".format(element.lower(), ion)
+        
         for i, node in enumerate(nodes):
             data = self.release.retrieve_table("""SELECT {0}, e_{0}
                 FROM node_results WHERE node = %s ORDER BY ra DESC, dec DESC,
