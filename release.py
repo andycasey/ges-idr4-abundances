@@ -14,6 +14,7 @@ import psycopg2 as pg
 from astropy.table import Table
 from matplotlib.cm import Paired
 
+import utils
 from bias import AbundanceBiases
 from flag import AbundanceFlags
 from homogenise import AbundanceHomogenisation
@@ -70,6 +71,91 @@ class DataRelease(object):
 
 
     def _match_species_abundances(self, element, ion, additional_columns=None,
+        scaled=False, include_flagged_lines=False):
+        """
+        Return an array of matched line abundances for the given species.
+        """
+
+        column = "scaled_abundance" if scaled else "abundance"
+        flag_query = "" if include_flagged_lines else "AND l.flags = 0"
+        
+        # Do outer joins for all the nodes?
+        nodes = self.retrieve_column("""SELECT DISTINCT ON (node) node 
+            FROM line_abundances l
+            WHERE trim(l.element) = %s AND l.ion = %s {0}""".format(flag_query),
+            (element, ion), asarray=True)
+
+        rounding = self.config.round_wavelengths
+        tmp_name = "tmp_" + utils.random_string(size=6)
+
+        query = "DROP TABLE IF EXISTS {tbl}; DROP INDEX IF EXISTS {tbl}_index;"
+        if additional_columns is None:
+            query += """CREATE TABLE {tbl} AS (SELECT DISTINCT ON
+                (round(wavelength::numeric, {rounding}), spectrum_filename_stub)
+                round(wavelength::numeric, {rounding}) AS wavelength,
+                spectrum_filename_stub
+                FROM line_abundances l
+                WHERE TRIM(l.element) = %s AND l.ion = %s {flag_query})"""
+        else:
+            additional_columns = ", ".join(set(additional_columns))
+            query += """CREATE TABLE {tbl} AS (SELECT DISTINCT ON 
+                (round(wavelength::numeric, {rounding}), spectrum_filename_stub)
+                round(wavelength::numeric, {rounding}) AS wavelength,
+                spectrum_filename_stub, n.*
+                FROM line_abundances l
+                JOIN (SELECT DISTINCT ON (cname) cname, {additional_columns} 
+                    FROM node_results ORDER BY cname) n 
+                ON (trim(l.element) = %s AND l.ion = %s
+                    AND l.cname = n.cname {flag_query}))"""
+
+        self.execute(query.format(tbl=tmp_name, rounding=rounding,
+            flag_query=flag_query, additional_columns=additional_columns or ""),
+            (element, ion))
+        # Create an index.
+        self.execute("""CREATE INDEX {0}_index ON {0} 
+            (wavelength, spectrum_filename_stub)""".format(tmp_name))
+        self._database.commit()
+
+        N_nodes = len(nodes)
+        
+        # Do a left outer join against the table.
+        query = """SELECT DISTINCT ON (T.wavelength, T.spectrum_filename_stub)
+            T2.{5} {6}
+            FROM {0} T LEFT OUTER JOIN line_abundances T2 ON (
+                T.spectrum_filename_stub = T2.spectrum_filename_stub AND
+                T.wavelength = round(T2.wavelength::numeric, {1}) AND
+                TRIM(T2.element) = '{2}' AND T2.ion = {3} AND 
+                T2.node = '{4}') 
+            ORDER BY T.spectrum_filename_stub, T.wavelength ASC"""
+
+        data = self.retrieve_table(query.format(
+            tmp_name, rounding, element, ion, nodes[0], column, ", T.*"),
+            disable_rounding=True)
+
+        if data is None or len(data) == 0:
+            self.execute("DROP TABLE {0}".format(tmp_name))
+            self._database.commit()
+            return (None, None, None)
+
+        data["wavelength"] = data["wavelength"].astype(float)
+        X = np.nan * np.ones((len(data), N_nodes))
+        X[:, 0] = data["abundance"].astype(float)
+        del data["abundance"]
+
+        for i, node in enumerate(nodes[1:], start=1):
+            logger.debug("doing node {0} {1}".format(i, node))
+            X[:, i] = self.retrieve_column(
+                query.format(tmp_name, rounding, element, ion, node, column, ""),
+                asarray=True).astype(float)
+
+
+        self.execute("DROP TABLE {0}".format(tmp_name))
+        self._database.commit()
+
+        return (X, nodes, data)
+
+
+    def _match_species_abundances_old(self, element, ion, additional_columns=None,
         scaled=False, include_flagged_lines=False):
         """
         Return an array of matched line abundances for the given species.
@@ -231,7 +317,7 @@ class DataRelease(object):
         return (names, results, cursor)
 
 
-    def retrieve_table(self, query, values=None, prefixes=True):
+    def retrieve_table(self, query, values=None, prefixes=True, **kwargs):
         """
         Retrieve a named table from a database.
 
@@ -277,7 +363,8 @@ class DataRelease(object):
         table = Table(rows=rows, names=names)
         # If wavelengths are in the table, and we should round them, round them.
         if "wavelength" in table.dtype.names \
-        and self.config.round_wavelengths >= 0:
+        and self.config.round_wavelengths >= 0 \
+        and not kwargs.pop("disable_rounding", False):
             table["wavelength"] = np.round(table["wavelength"],
                 self.config.round_wavelengths)
         return table

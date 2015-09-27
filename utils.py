@@ -7,14 +7,19 @@ from __future__ import division, absolute_import, print_function
 
 __author__ = "Andy Casey <arc@ast.cam.ac.uk>"
 
+import string
 import yaml
 from collections import namedtuple
 from itertools import combinations
+from random import choice
 
 import numpy as np
 
 import data
 
+
+def random_string(size=6, chars=string.ascii_uppercase + string.digits):
+    return ''.join(choice(chars) for _ in range(size))
 
 def calculate_differential_abundances(X, full_output=True):
     N_entries, N_nodes = X.shape
