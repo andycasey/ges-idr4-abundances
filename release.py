@@ -139,15 +139,14 @@ class DataRelease(object):
 
         data["wavelength"] = data["wavelength"].astype(float)
         X = np.nan * np.ones((len(data), N_nodes))
-        X[:, 0] = data["abundance"].astype(float)
-        del data["abundance"]
+        X[:, 0] = data[column].astype(float)
+        del data[column]
 
         for i, node in enumerate(nodes[1:], start=1):
             logger.debug("doing node {0} {1}".format(i, node))
             X[:, i] = self.retrieve_column(
                 query.format(tmp_name, rounding, element, ion, node, column, ""),
                 asarray=True).astype(float)
-
 
         self.execute("DROP TABLE {0}".format(tmp_name))
         self._database.commit()
