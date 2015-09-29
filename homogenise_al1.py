@@ -31,6 +31,21 @@ num_rows = ges.flags.update([flag_id],
     wavelength > 6696.7 AND wavelength < 6696.9 AND abundance != 'NaN'""".format(
         element, ion))
 
+# ULB does not do well for 5557.1 for cool stars
+flag_id = ges.flags.retrieve_or_create(
+    "Large scatter seen in this star for cool stars")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) cname, 
+        teff FROM node_results) n ON (n.cname = l.cname AND l.element = '{0}' 
+    and l.ion = {1} and l.node LIKE 'ULB%' AND l.wavelength < 5557.2 AND n.teff < 4000)""".format(element, ion))
+
+# Lumba does not do well for any metal-poor stars.
+flag_id = ges.flags.retrieve_or_create("Large scatter seen in this line for EMP stars")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) cname,
+        feh FROM node_results) n ON (n.cname = l.cname AND l.element = '{0}'
+    AND l.ion = {1} and l.node LIKE 'Lumba%' and n.feh < -2.5)""".format(element, ion))
+
 # Calculate biases and apply them.
 species_biases = ges.biases.differential(element, ion)
 for node in species_biases:
