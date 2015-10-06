@@ -82,7 +82,7 @@ num_rows = ges.flags.update([flag_id],
             (l.wavelength > 6155.0 AND l.wavelength < 6156.5) OR
             (l.wavelength > 6166.0 AND l.wavelength < 6167) OR
             (l.wavelength > 6455.0 AND l.wavelength < 6456.0)
-        )""".format(element, ion))
+        ))""".format(element, ion))
 
 # Lumba shows large scatter for hot stars for 5601.3 and 5857.4 line and 
 # 6102.7 and 6122.2 line and 6162.2 line

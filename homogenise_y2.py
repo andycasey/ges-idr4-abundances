@@ -18,6 +18,10 @@ ges = release.DataRelease(database)
 # 4900.1 looks OK, modulo some offset
 
 
+
+
+
+
 # remove 4204.7 line
 # remove 4398.0 line
 flag_id = ges.flags.retrieve_or_create("Not an ideal line for analysis")
@@ -70,11 +74,71 @@ flag_id = ges.flags.retrieve_or_create(
     "Large scatter seen in this star for cool stars")
 num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances l JOIN (select distinct on (cname) cname,
-        feh FROM node_results) n ON (l.cname = n.cname AND 
+        feh, teff FROM node_results) n ON (l.cname = n.cname AND 
         TRIM(l.element) = '{0}' AND l.ion = {1} AND 
         l.node LIKE 'ULB%' AND n.teff < 4000 AND 
         (l.wavelength > 5544 AND l.wavelength < 5545))""".format(
     element, ion))
+
+
+# EPINARBO Bad for EMP stars at 5544.6 and 5546.0 line and 4982.1 line and 5119.1 line and 5123.2 line
+# and 5200.4 line and 5289.8 line and 5402.8 line and 5473.4 line
+flag_id = ges.flags.retrieve_or_create(
+    "Large scatter seen in this line for EMP stars")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (select distinct on (cname) cname,
+        feh FROM node_results) n ON (l.cname = n.cname AND 
+        TRIM(l.element) = '{0}' AND l.ion = {1} AND l.node LIKE 'EPINARBO%'
+        AND n.feh < -2.5 AND (
+            (l.wavelength > 5544 AND l.wavelength < 5545) OR
+            (l.wavelength > 5545.5 AND l.wavelength < 5546.5) OR
+            (l.wavelength > 4982 AND l.wavelength < 4983) OR
+            (l.wavelength > 5119 AND l.wavelength < 5120) OR
+            (l.wavelength > 5123 AND l.wavelength < 5124) OR
+            (l.wavelength > 5200 AND l.wavelength < 5201) OR
+            (l.wavelength > 5289 AND l.wavelength < 5290) OR
+            (l.wavelength > 5402 AND l.wavelength < 5403) OR
+            (l.wavelength > 5473 AND l.wavelength < 5474)
+        ))""".format(element, ion))
+
+# Lumba bad for 4982.1 line for EMP lines and 5544.6 line
+flag_id = ges.flags.retrieve_or_create(
+    "Large scatter seen in this line for EMP stars")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (select distinct on (cname) cname,
+        feh FROM node_results) n ON (l.cname = n.cname AND 
+        TRIM(l.element) = '{0}' AND l.ion = {1} AND 
+        l.node LIKE 'Lumba%'
+        AND n.feh < -2.5 AND 
+        (
+            (l.wavelength > 5544 AND l.wavelength < 5545)
+        ))""".format(
+    element, ion))
+
+# Lumba shows large scatter for 5728.9 line
+flag_id = ges.flags.retrieve_or_create(
+    "Large scatter seen for this line from this node")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = {1}
+    AND node LIKE 'Lumba%' AND wavelength > 5728 AND wavelength < 5729""".format(
+        element, ion))
+
+# ULB bad for cool stars for 5402.8 line and 5544.6 line ( <4500)
+flag_id = ges.flags.retrieve_or_create(
+    "Large scatter seen in this star for cool stars")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (select distinct on (cname) cname,
+        feh, teff FROM node_results) n ON (l.cname = n.cname AND 
+        TRIM(l.element) = '{0}' AND l.ion = {1} AND 
+        l.node LIKE 'ULB%' AND n.teff < 4500 AND 
+        (
+            (l.wavelength > 5544 AND l.wavelength < 5545) OR
+            (l.wavelength > 5402 AND l.wavelength < 5403)
+        ))""".format(
+    element, ion))
+
+
+
 
 
 # Calculate biases and apply them.
