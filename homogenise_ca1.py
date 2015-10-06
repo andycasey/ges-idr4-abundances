@@ -143,7 +143,7 @@ num_rows = ges.flags.update([flag_id],
         AND (
             (l.wavelength > 5588 AND l.wavelength < 5589) OR 
             (l.wavelength > 5857 AND l.wavelength < 5858)
-        )""".format(element, ion))
+        ))""".format(element, ion))
 
 flag_id = ges.flags.retrieve_or_create(
     "Large scatter seen in this star for hot stars")
@@ -154,7 +154,7 @@ num_rows = ges.flags.update([flag_id],
         AND (
             (l.wavelength > 5588 AND l.wavelength < 5589) OR 
             (l.wavelength > 5857 AND l.wavelength < 5858)
-        )""".format(element, ion))
+        ))""".format(element, ion))
 
 # ULB bad for metal-oor stars in 5867.6 line
 flag_id = ges.flags.retrieve_or_create(
@@ -186,7 +186,7 @@ num_rows = ges.flags.update([flag_id],
         (
             (l.wavelength > 6102 AND l.wavelength < 6103) OR
             (l.wavelength > 6122 AND l.wavelength < 6123)
-        )""".format(element, ion))
+        ))""".format(element, ion))
 
 # ULB bad for EMP stars in 6156.0 line
 flag_id = ges.flags.retrieve_or_create(
