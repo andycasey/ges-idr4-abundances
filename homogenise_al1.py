@@ -46,6 +46,12 @@ num_rows = ges.flags.update([flag_id],
         feh FROM node_results) n ON (n.cname = l.cname AND l.element = '{0}'
     AND l.ion = {1} and l.node LIKE 'Lumba%' and n.feh < -2.5)""".format(element, ion))
 
+flag_id = ges.flags.retrieve_or_create("Large scatter seen in this line for EMP stars")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) cname,
+        feh FROM node_results) n ON (n.cname = l.cname and l.element = '{0}'
+    AND l.ion = {1} AND l.node LIKE 'EPINARBO%' AND n.feh < -2.5)""".format(element, ion))
+
 # Calculate biases and apply them.
 species_biases = ges.biases.differential(element, ion)
 for node in species_biases:
