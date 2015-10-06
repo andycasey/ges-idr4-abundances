@@ -91,7 +91,7 @@ flag_id = ges.flags.retrieve_or_create(
     "Large scatter seen in this star for hot stars")
 num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) cname,
-        teff FROM node_resutls) n ON (l.cname = n.cname AND l.element = '{0}'
+        teff FROM node_results) n ON (l.cname = n.cname AND l.element = '{0}'
         AND l.ion = {1} and n.teff > 6250 AND l.node LIKE 'Lumba%')""".format(
         element, ion))
 
