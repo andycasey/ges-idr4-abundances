@@ -130,8 +130,7 @@ num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) cname,
         teff, feh FROM node_results) n ON (l.cname = n.cname AND l.element = '{0}'
         AND l.ion = {1} AND l.node LIKE 'ULB%' AND n.teff < 4000 AND n.feh > -1
-        AND (
-            (l.wavelength > 5581.5 AND l.wavelength < 5582.5)
+        AND l.wavelength > 5581.5 AND l.wavelength < 5582.5
         )""".format(element, ion))
 
 # ULB bad for cool stars (<4000) and hot stars (>6000) in 5588.8 line abd 5857.4 line
