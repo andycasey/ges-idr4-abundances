@@ -388,7 +388,9 @@ class AbundancePlotting(object):
                     X_diff_wavelength[:, k].flatten() \
                     for k, idx in enumerate(indices) if j in idx])
 
-                if np.any(np.isfinite(X_diff_wavelength_node)):
+                if np.any(np.isfinite(X_diff_wavelength_node)) and \
+                    np.any((np.nanmin(X_diff_wavelength_node) > bin_min) * \
+                    (bin_max > np.nanmax(X_diff_wavelength_node))):
                     ax.hist(X_diff_wavelength_node, color=colors[node],
                         **hist_kwds)
                 
@@ -1183,14 +1185,23 @@ class AbundancePlotting(object):
         N_nodes, N_lines = len(nodes), len(wavelengths)
 
         # Calculate figure size
-        xscale, yscale, wspace, hspace = 4.0, 1.5, 0.05, 0.10
-        lb, tr = 0.5, 0.2
-        xs = xscale * N_lines + xscale * (N_lines - 1) * wspace
-        ys = yscale * N_nodes + yscale * (N_nodes - 1) * hspace
-        x_aux = 0 if aux_column is None else 0.5 * xscale + 4 * wspace
+        
+        xdim, scale = None, 1.
+        while xdim is None or xdim > 400:
 
-        xdim = lb * xscale + xs + x_aux + tr * xscale
-        ydim = lb * yscale + ys + tr * yscale
+            lb, tr = 0.5 * scale, 0.2 * scale
+            xscale, yscale = 4.0 * scale, 1.5 * scale
+            wspace, hspace = 0.05 * scale, 0.10 * scale
+            
+            xs = xscale * N_lines + xscale * (N_lines - 1) * wspace
+            ys = yscale * N_nodes + yscale * (N_nodes - 1) * hspace
+            x_aux = 0 if aux_column is None else 0.5 * xscale + 4 * wspace
+
+            xdim = lb * xscale + xs + x_aux + tr * xscale
+            ydim = lb * yscale + ys + tr * yscale
+
+            # In case xdim > 400
+            scale /= 2.
 
         logger.debug("Requesting figure size: {0}, {1}".format(xdim, ydim))
         fig, axes = plt.subplots(N_nodes, N_lines, figsize=(xdim, ydim))
@@ -1580,7 +1591,7 @@ class AbundancePlotting(object):
 
 
     def homogenised_abundance_uncertainties(self, element, ion, bins=50,
-        x_extent=(0, 0.25)):
+        x_extent=(0, 0.5)):
         """
         Draw histograms showing the distribution of uncertainties in each line
         abundance for the given element.
@@ -1636,7 +1647,12 @@ class AbundancePlotting(object):
         fig, ax = plt.subplots(1)
 
         for group in data.groups:
-            ax.hist(group["e_abundance"], **hist_kwargs)
+            if np.any((group["e_abundance"] > hist_kwargs["bins"][0]) * \
+                (group["e_abundance"] < hist_kwargs["bins"][-1])):
+                ax.hist(group["e_abundance"], **hist_kwargs)
+            else:
+                logger.warn("Skipping over {0} {1} elements because they are "\
+                    "outside the display range".format(element, ion))
 
         # Show the full distribution as a thick line.
         hist_kwargs.update({
@@ -1644,7 +1660,14 @@ class AbundancePlotting(object):
             "color": "k"
         })
         hist_kwargs["lw"] = 3
-        ax.hist(data["e_abundance"], **hist_kwargs)
+
+        if np.any((data["e_abundance"] > hist_kwargs["bins"][0]) * \
+            (data["e_abundance"] < hist_kwargs["bins"][-1])):
+            ax.hist(data["e_abundance"], **hist_kwargs)
+
+        else:
+            logger.warn("ALL ELEMENTAL ABUNDANCE UNCERTAINTIES FOR {0} {1} ARE"\
+                " OUTSIDE THE DISPLAY RANGE".format(element, ion))
 
         ax.xaxis.set_major_locator(MaxNLocator(5))
         ax.yaxis.set_major_locator(MaxNLocator(5))
