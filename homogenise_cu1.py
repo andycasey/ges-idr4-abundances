@@ -32,11 +32,11 @@ flag_id = ges.flags.retrieve_or_create(
     "Large scatter seen in this star for cool stars")
 num_rows = ges.flags.update([flag_id],
     """SELECT l.id FROM line_abundances l JOIN 
-    (SELECT DISTINCT ON (cname) cname, feh from node_results) n 
+    (SELECT DISTINCT ON (cname) cname, teff from node_results) n 
     ON (l.cname = n.cname and l.element = '{0}' AND l.ion = {1}
         AND l.node LIKE 'ULB%' AND n.teff < 4000 
         AND ((l.wavelength > 5700 AND l.wavelength < 5701) OR 
-        (l.wavelength < 5106))"""\
+        (l.wavelength < 5106)))"""\
     .format(element, ion))
 
 # ULB bad for hot stars for one line
@@ -44,7 +44,7 @@ flag_id = ges.flags.retrieve_or_create(
     "Large scatter seen in this star for hot stars")
 num_rows = ges.flags.update([flag_id],
     """SELECT l.id FROM line_abundances l JOIN 
-    (SELECT DISTINCT ON (cname) cname, feh from node_results) n 
+    (SELECT DISTINCT ON (cname) cname, teff from node_results) n 
     ON (l.cname = n.cname and l.element = '{0}' AND l.ion = {1}
         AND l.node LIKE 'ULB%' AND n.teff > 6000 
         AND l.wavelength > 5220 AND l.wavelength < 5221)"""\
