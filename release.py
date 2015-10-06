@@ -298,7 +298,7 @@ class DataRelease(object):
                 else: results = None
 
         except pg.ProgrammingError:
-            logger.exception("SQL query failed:")
+            logger.exception("SQL query failed: {0}, {1}".format(query, values))
             cursor.close()
             raise
         
