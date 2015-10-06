@@ -19,7 +19,7 @@ flag_id = ges.flags.retrieve_or_create(
     "Large scatter seen in this line for EMP stars")
 num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
-        node like 'Lumba%' AND wavelength > 5842 AND wavelength < 5843""")
+        node like 'Lumba%' AND wavelength > 5842 AND wavelength < 5843""".format(element, ion))
 
 # Lumba and ULB disagree a lot for 5276.9 line and 5740.9 line and 4998.5 line
 flag_id = ges.flags.retrieve_or_create(
@@ -28,7 +28,7 @@ num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
         (wavelength > 4998 AND wavelength < 4999) OR
         (wavelength > 5726 AND wavelength < 5727) OR
-        (wavelength > 5740 AND wavelength < 5741)""")
+        (wavelength > 5740 AND wavelength < 5741)""".format(element, ion))
 
 # Solar biases available for most nodes. Differential biases available for 1/2
 # of the remaining lines.
