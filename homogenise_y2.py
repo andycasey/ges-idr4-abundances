@@ -150,14 +150,12 @@ for node in species_biases:
 # Perform the homogenisation.
 result = ges.homogenise.species(element, ion)
 
+
 # Produce some figures.
 fig = ges.plot.differential_line_abundances(element, ion, scaled=True)
-fig.savefig("figures/{0}/scaled-differential-line-abundances.png".format(_))
+fig.savefig("figures/{0}{1}/scaled-differential-line-abundances.png".format(
+    element.upper(), ion))
 
 fig = ges.plot.solar_comparison(element, ion, scaled=True)
-fig.savefig("figures/{0}/scaled-compare-solar.png".format(_))
-
-_ = "{0}{1}".format(element.upper(), ion)
-fig = ges.plot.benchmark_line_abundances(element, ion, "benchmarks.yaml",
-    scaled=True)
-fig.savefig("figures/{0}/scaled-benchmark-line-abundances.png".format(_))
+fig.savefig("figures/{0}{1}/scaled-compare-solar.png".format(element.upper(),
+    ion))
