@@ -13,17 +13,13 @@ ges = release.DataRelease(database)
 # 5305.8 and 5502.1 line very poor for Lumba in the sun.
 # all nodes systematically high for 5420.9 line wrt to the sun
 
-# remove cool (<4500) or EMP (<-2.5) stars for 5246.8 line for ULB
+# ULB shows very peculiar results.
 flag_id = ges.flags.retrieve_or_create(
-    "Large scatter seen in this star for cool stars")
-
+    "Large scatter seen for this line from this node")
 num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances l JOIN (select distinct on (cname) cname,
-        teff, feh FROM node_results) n ON (l.cname = n.cname AND 
-        l.element = '{0}' AND l.ion = {1} AND l.node LIKE 'ULB%' AND
-        (n.feh < -2.5 OR n.teff < 4500) AND
-        (l.wavelength > 5246 AND l.wavelength < 5247))""".format(
-    element, ion))
+    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = {1} AND
+    node like 'ULB%'""".format(element, ion))
+
 
 # Calculate biases and apply them.
 species_biases = ges.biases.differential(element, ion)
