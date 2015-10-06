@@ -400,7 +400,6 @@ def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
     #bad_values = ~np.isfinite(u_abundance) + (0 >= u_abundance)
     #u_abundance[bad_values] = np.nanmean(u_abundance[~bad_values])
     if not np.all(np.isfinite(u_abundance)):
-        raise wtfError
         logger.warn("Setting 0.2 dex uncertainty for {0} {1} line at {2}".format(
             None, None, measurements["wavelength"][0]))
         u_abundance[:] = 0.2
@@ -422,6 +421,9 @@ def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
     abundance_mean = np.sum(weights * abundance)
     abundance_sigma = np.sqrt(np.sum(
         np.tile(weights, N) * np.repeat(weights, N) * cov.flatten()))
+
+    if not np.isfinite(abundance_sigma):
+        abundance_sigma = np.nanstd(abundance)
 
     assert np.isfinite(abundance_mean * abundance_sigma)
 
