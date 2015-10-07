@@ -5,12 +5,15 @@
 
 __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
+import os
 import logging
 from collections import Counter, namedtuple
+from datetime import datetime
 from time import time
 
 import numpy as np
 import psycopg2 as pg
+from astropy.io import fits
 from astropy.table import Table
 from matplotlib.cm import Paired
 
@@ -394,3 +397,149 @@ class DataRelease(object):
 
         rows = self.retrieve(query, values)
         return rows if not asarray else np.array(rows).flatten()
+
+
+    def export_fits(self, template_filename, output_filename, clobber=False,
+        rounding=2):
+        """
+        Export the homogenised stellar abundances to FITS format using the
+        node template filename provided.
+
+        :param template_filename:
+            The path of the node template filename.
+
+        :type template_filename:
+            str
+
+        :param output_filename:
+            The path to write the recommended abundances to.
+
+        :type output_filename:
+            str
+
+        :param clobber: [optional]
+            Overwrite the existing `output_filename` if it already exists.
+
+        :type clobber:
+            bool
+
+        :returns:
+            True if the file was successfully produced.
+        """
+
+        # Check that we wont overwrite the image
+        if os.path.exists(output_filename) and not clobber:
+            raise IOError("filename {0} exists and we've been asked not to "\
+                "clobber it".format(output_filename))
+
+        if not os.path.exists(template_filename):
+            raise IOError("node template filename {0} does not exist".format(
+                template_filename))
+
+        if rounding is None:
+            rounder = lambda x: x
+        else:
+            rounder = lambda x: np.round(x, rounding)
+
+        # Open the image
+        image = fits.open(template_filename)
+
+        # Update metadata: DATETAB in extension 0
+        now = datetime.now()
+        image[0].header["DATETAB"] = "{0:02d}-{1:02d}-{2:02d}".format(
+            now.year, now.month, now.day)
+
+        N = len(image[1].data)
+
+        unmatched = []
+
+        # For each cname / spectrum_filename_stub extract the abundances
+        for i, (cname, filename) \
+        in enumerate(zip(image[1].data["CNAME"], image[1].data["FILENAME"])):
+
+            # Generate the spectrum filename stub.
+            filenames = filename.split("|")
+            spectrum_filename_stub = ("".join([filenames[0][j] \
+                for j in range(max(map(len, filenames))) \
+                if len(set([item[j] for item in filenames])) == 1]))[:-5]
+
+            # Find abundances related to this CNAME and filename.
+            results = self.retrieve_table(
+                """SELECT * FROM homogenised_abundances WHERE cname = %s
+                AND TRIM(spectrum_filename_stub) = %s""",
+                (cname, spectrum_filename_stub))
+
+            if results is None or len(results) == 0:
+                unmatched.append((cname, spectrum_filename_stub))
+                logger.warn("No matches for {0}/{1}".format(
+                    cname, spectrum_filename_stub))
+                continue
+
+            # This is a problem for future Andy
+            assert len(set(results["spectrum_filename_stub"])) == 1
+
+            # FITS table columns for an element (typically)
+            # CR2, UPPER_CR2, E_CR2, NN_CR2, ENN_CR2, NL_CR2
+            """
+            TTYPE256= 'CR2     '           / Ionised Chromium Abundance                     
+            TFORM256= 'E       '           / data format of field: 4-byte REAL              
+            TUNIT256= 'dex     '           / physical unit of field                         
+            TTYPE257= 'UPPER_CR2'          / Flag on CR2 measurement type                   
+            TFORM257= 'I       '           / data format of field: 2-byte INTEGER           
+            TNULL257=                   -1 / NULL value column 257                          
+            TTYPE258= 'E_CR2   '           / Error on CR2                                   
+            TFORM258= 'E       '           / data format of field: 4-byte REAL              
+            TUNIT258= 'dex     '           / physical unit of field                         
+            TTYPE259= 'NN_CR2  '           / Number of Node results used for CR2            
+            TFORM259= 'I       '           / data format of field: 2-byte INTEGER           
+            TNULL259=                   -1 / NULL value column 259                          
+            TTYPE260= 'ENN_CR2 '           / Error on CR2 from Node errors                  
+            TFORM260= 'E       '           / data format of field: 4-byte REAL              
+            TUNIT260= 'dex     '           / physical unit of field                         
+            TTYPE261= 'NL_CR2  '           / Number of Spectral Lines used for CR2          
+            TFORM261= 'I       '           / data format of field: 2-byte INTEGER           
+            TNULL261=                   -1 / NULL value column 261                 
+            """
+
+            # How does this translate?
+            # [ELEMENT][ion] = abundance
+            # UPPER_[ELEMENT][ion] = upper_abundance
+            # E_[ELEMENT][ion] = e_abundance
+            # NN_[ELEMENT][ion] = num_measurements ?
+            # ENN_[ELEMENT][ion] = ?????
+            # NL_[ELEMENT][ion ] = num_lines
+
+            for row in results:
+
+                species = \
+                    "{0}{1}".format(row["element"].upper().strip(), row["ion"])
+
+                logger.info("Updating row {0}/{1} ({2}/{3}) with {4}".format(
+                    i + 1, N, cname, spectrum_filename_stub, species))
+
+                image[1].data[species][i] = rounder(row["abundance"])
+                image[1].data["E_{}".format(species)] \
+                    = rounder(row["e_abundance"])
+                image[1].data["NN_{}".format(species)] \
+                    = row["num_measurements"]
+                #image[1].data["ENN_{}".format(species)]
+                image[1].data["NL_{}".format(species)] = row["num_lines"]
+
+                upper_column = "UPPER_{}".format(species)
+                if upper_column not in image[1].data.dtype.names:
+                    upper_column = "UPPER_COMBINED_{}".format(species)
+
+                image[1].data[upper_column] = row["upper_abundance"]
+                
+        if len(unmatched):
+            logger.warn("There were {0} unmatched sequences of CNAME and the "\
+                "spectrum filename stub:\n{1}".format(len(unmatched),
+                    "\n".join(unmatched)))
+
+        image.write(output_filename, clobber=True)
+        logger.info("Exported homogenised abundances to {0}".format(
+            output_filename))
+        
+        raise a
+
+        return True
