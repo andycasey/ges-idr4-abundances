@@ -9,6 +9,12 @@ import release
 database, element, ion = ("arc", "S", 1)
 ges = release.DataRelease(database)
 
+# Non-physical errors
+flag_id = ges.flags.retrieve_or_create("Abundance error is non-physical")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
+        e_abundance > 1""".format(element, ion))
+
 flag_id = ges.flags.retrieve_or_create("Abundance is non-physical")
 num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
@@ -21,6 +27,17 @@ flag_id = ges.flags.retrieve_or_create(
 num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
     AND wavelength < 6757 AND abundance != 'NaN'""".format(element, ion))
+
+# ULB for EMP stars
+flag_id = ges.flags.retrieve_or_create(
+    "Large scatter seen in this line for EMP stars")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (select distinct on (cname) cname,
+        feh FROM node_results) n ON (l.cname = n.cname AND 
+        l.element = '{0}' AND l.ion = {1} AND l.node LIKE 'ULB%' AND
+        n.feh < -2.5 AND (
+            (l.wavelength > 6757 AND l.wavelength < 6758)
+        ))""".format(element, ion))
 
 # Calculate biases and apply them.
 species_biases = ges.biases.differential(element, ion)
