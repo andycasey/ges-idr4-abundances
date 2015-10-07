@@ -61,29 +61,29 @@ num_rows = ges.flags.update([flag_id],
         feh FROM node_results) n ON (l.cname = n.cname AND 
         l.element = '{0}' AND l.ion = {1} AND l.node LIKE 'EPINARBO%' AND
         n.feh < -2.5 AND (
-            (l.wavelength 4893 > AND l.wavelength < 4894) OR
-            (l.wavelength 4993 > AND l.wavelength < 4994) OR
-            (l.wavelength 5000 > AND l.wavelength < 5001) OR
-            (l.wavelength 5132 > AND l.wavelength < 5133) OR
-            (l.wavelength 5197 > AND l.wavelength < 5198) OR
-            (l.wavelength 5264 > AND l.wavelength < 5265) OR
-            (l.wavelength 5284 > AND l.wavelength < 5285) OR
-            (l.wavelength 5325 > AND l.wavelength < 5326) OR
-            (l.wavelength 5337 > AND l.wavelength < 5338) OR
-            (l.wavelength 5414 > AND l.wavelength < 5415) OR
-            (l.wavelength 5425 > AND l.wavelength < 5426) OR
-            (l.wavelength 5525 > AND l.wavelength < 5526) OR
-            (l.wavelength 5534 > AND l.wavelength < 5535) OR
-            (l.wavelength 5991 > AND l.wavelength < 5992) OR
-            (l.wavelength 6084 > AND l.wavelength < 6085) OR
-            (l.wavelength 6113 > AND l.wavelength < 6114) OR
-            (l.wavelength 6149 > AND l.wavelength < 6150) OR
-            (l.wavelength 6238 > AND l.wavelength < 6239) OR
-            (l.wavelength 6247 > AND l.wavelength < 6248) OR
-            (l.wavelength 6416 > AND l.wavelength < 6417) OR
-            (l.wavelength 6432 > AND l.wavelength < 6433) OR
-            (l.wavelength 6456 > AND l.wavelength < 6457) OR
-            (l.wavelength 6516 > AND l.wavelength < 6517)
+            (l.wavelength > 4893 AND l.wavelength < 4894) OR
+            (l.wavelength > 4993 AND l.wavelength < 4994) OR
+            (l.wavelength > 5000 AND l.wavelength < 5001) OR
+            (l.wavelength > 5132 AND l.wavelength < 5133) OR
+            (l.wavelength > 5197 AND l.wavelength < 5198) OR
+            (l.wavelength > 5264 AND l.wavelength < 5265) OR
+            (l.wavelength > 5284 AND l.wavelength < 5285) OR
+            (l.wavelength > 5325 AND l.wavelength < 5326) OR
+            (l.wavelength > 5337 AND l.wavelength < 5338) OR
+            (l.wavelength > 5414 AND l.wavelength < 5415) OR
+            (l.wavelength > 5425 AND l.wavelength < 5426) OR
+            (l.wavelength > 5525 AND l.wavelength < 5526) OR
+            (l.wavelength > 5534 AND l.wavelength < 5535) OR
+            (l.wavelength > 5991 AND l.wavelength < 5992) OR
+            (l.wavelength > 6084 AND l.wavelength < 6085) OR
+            (l.wavelength > 6113 AND l.wavelength < 6114) OR
+            (l.wavelength > 6149 AND l.wavelength < 6150) OR
+            (l.wavelength > 6238 AND l.wavelength < 6239) OR
+            (l.wavelength > 6247 AND l.wavelength < 6248) OR
+            (l.wavelength > 6416 AND l.wavelength < 6417) OR
+            (l.wavelength > 6432 AND l.wavelength < 6433) OR
+            (l.wavelength > 6456 AND l.wavelength < 6457) OR
+            (l.wavelength > 6516 AND l.wavelength < 6517)
         ))""".format(element, ion))
 
 # Remove MyGISFOS cool stars at 6456.4 (<4250)
