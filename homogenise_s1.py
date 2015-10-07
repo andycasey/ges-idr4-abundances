@@ -12,12 +12,12 @@ ges = release.DataRelease(database)
 # Non-physical errors
 flag_id = ges.flags.retrieve_or_create("Abundance error is non-physical")
 num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
+    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = '{1}' AND
         e_abundance > 1""".format(element, ion))
 
 flag_id = ges.flags.retrieve_or_create("Abundance is non-physical")
 num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
+    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = '{1}' AND
         (abundance > 9)""".format(element, ion))
 
 # ULB and EPINARBO show very different results (~0.4 dex offset) for lines bluer
@@ -25,7 +25,7 @@ num_rows = ges.flags.update([flag_id],
 flag_id = ges.flags.retrieve_or_create(
     "Not an ideal line for analysis")
 num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
+    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = '{1}'
     AND wavelength < 6757 AND abundance != 'NaN'""".format(element, ion))
 
 # ULB for EMP stars
@@ -34,7 +34,7 @@ flag_id = ges.flags.retrieve_or_create(
 num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances l JOIN (select distinct on (cname) cname,
         feh FROM node_results) n ON (l.cname = n.cname AND 
-        l.element = '{0}' AND l.ion = {1} AND l.node LIKE 'ULB%' AND
+        TRIM(l.element) = '{0}' AND l.ion = {1} AND l.node LIKE 'ULB%' AND
         n.feh < -2.5 AND (
             (l.wavelength > 6757 AND l.wavelength < 6758)
         ))""".format(element, ion))
