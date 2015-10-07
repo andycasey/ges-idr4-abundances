@@ -33,17 +33,24 @@ class AbundanceHomogenisation(object):
             int
         """
 
+        element += "" if len(element) > 1 else " "
+
         # Remove any existing homogenised line or average abundances.
         self.release.execute("""DELETE FROM homogenised_line_abundances
-            WHERE trim(element) = %s AND ion = %s""", (element, ion))
+            WHERE element = %s AND ion = %s""", (element, ion))
         self.release.execute("""DELETE FROM homogenised_abundances
-            WHERE trim(element) = %s AND ion = %s""", (element, ion))
+            WHERE element = %s AND ion = %s""", (element, ion))
+
+        # Drop index if it exists.
+        self.release.execute(
+            "DROP INDEX IF EXISTS homogenised_line_abundances_species_index")
+
         self.release.commit()
 
         # Get the unique wavelengths.
         wavelengths = self.release.retrieve_column(
             """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
-            WHERE trim(element) = %s AND ion = %s AND flags = 0
+            WHERE element = %s AND ion = %s AND flags = 0
             ORDER BY wavelength ASC""", (element, ion), asarray=True)
 
         if self.release.config.round_wavelengths >= 0:
@@ -53,7 +60,7 @@ class AbundanceHomogenisation(object):
         # Get the unique CNAMEs.
         cnames = self.release.retrieve_column(
             """SELECT DISTINCT ON (cname) cname FROM line_abundances
-            WHERE trim(element) = %s AND ion = %s ORDER BY cname ASC""",
+            WHERE element = %s AND ion = %s ORDER BY cname ASC""",
             (element, ion), asarray=True)
 
         # For each wavelength, approximate the covariance matrix then homogenise
@@ -74,6 +81,11 @@ class AbundanceHomogenisation(object):
             for j, cname in enumerate(cnames):
                 self.line_abundances(element, ion, cname, wavelength, rho, cov,
                     nodes, **kwargs)
+
+        # Create an index to speed things up.
+        self.release.execute("""CREATE UNIQUE INDEX
+            homogenised_line_abundances_species_index
+            ON homogenised_line_abundances (cname, element, ion)""")
 
         # Need to commit before we can do the averaged results per star.
         self.release.commit()
@@ -124,11 +136,13 @@ class AbundanceHomogenisation(object):
             :class:`~np.array`
         """
 
+        element += "" if len(element) > 1 else " "
+
         # Get all valid line abundances for this element, ion, cname.
         if self.release.config.wavelength_tolerance > 0:   
             measurements = self.release.retrieve_table("""SELECT * 
                 FROM line_abundances
-                WHERE trim(element) = %s AND ion = %s AND cname = %s 
+                WHERE element = %s AND ion = %s AND cname = %s 
                 AND flags = 0 AND abundance <> 'NaN'
                 AND wavelength >= %s AND wavelength <= %s ORDER BY node ASC""",
                 (element, ion, cname,
@@ -136,7 +150,7 @@ class AbundanceHomogenisation(object):
                     wavelength + self.release.config.wavelength_tolerance))
         else:
             measurements = self.release.retrieve_table("""SELECT *
-                FROM line_abundances WHERE trim(element) = %s AND ion = %s 
+                FROM line_abundances WHERE element = %s AND ion = %s 
                 AND cname = %s AND flags = 0 AND abundance <> 'NaN'
                 AND wavelength = %s ORDER BY node ASC""",
                 (element, ion, cname, wavelength))
@@ -180,9 +194,11 @@ class AbundanceHomogenisation(object):
             str
         """
         
+        element += "" if len(element) > 1 else " "
+
         # Get the data for this star/spectrum filename stub.
         line_abundances = self.release.retrieve_table(
-            """SELECT * FROM homogenised_line_abundances WHERE trim(element) = %s
+            """SELECT * FROM homogenised_line_abundances WHERE element = %s
             AND ion = %s AND cname = %s""", (element, ion, cname))
         if line_abundances is None: return
         line_abundances = line_abundances.group_by(["spectrum_filename_stub"])

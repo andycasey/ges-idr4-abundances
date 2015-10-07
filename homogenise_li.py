@@ -1,25 +1,26 @@
 
-""" Produce ensemble Na 1 abundances from the Gaia-ESO Survey iDR4 WG11 data """
+""" Produce ensemble Li 1 abundances from the Gaia-ESO Survey iDR4 WG11 data """
 
 __author__ = 'Andy Casey <arc@ast.cam.ac.uk>'
 
 
 import release
 
-database, element, ion = ("arc", "Na", 1)
+database, element, ion = ("arc", "Li", 1)
 ges = release.DataRelease(database)
 
-# Lines bluer than 4982.8 are generally only measured in a few stars by one node
-flag_id = ges.flags.retrieve_or_create(
-    "Not an ideal line for analysis")
-num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
-    AND wavelength < 4982""".format(element, ion))
+# Extract OACT results.
 
-# The 5890.0 and 5895.9 lines show a lot of scatter and irregularities.
-num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}'
-    AND wavelength > 5789 AND wavelength < 5896""".format(element, ion))
+
+# Set all wavelengths to the same value.
+ges.release.execute("""UPDATE line_abundances SET wavelength = 6707.8 WHERE
+    element = '{0}' AND ion = {1}""".format(element, ion))
+ges.release.commit()
+
+# Need OACT results
+# Need to deal with upper limits from EPINARBO gracefully
+raise NotImplementedError
+
 
 # Calculate biases and apply them.
 species_biases = ges.biases.differential(element, ion)

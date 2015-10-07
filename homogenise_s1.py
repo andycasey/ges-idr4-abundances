@@ -9,11 +9,6 @@ import release
 database, element, ion = ("arc", "S", 1)
 ges = release.DataRelease(database)
 
-# Non-physical errors
-flag_id = ges.flags.retrieve_or_create("Abundance error is non-physical")
-num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = '{1}' AND
-        e_abundance > 1""".format(element, ion))
 
 flag_id = ges.flags.retrieve_or_create("Abundance is non-physical")
 num_rows = ges.flags.update([flag_id],

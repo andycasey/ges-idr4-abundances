@@ -24,13 +24,6 @@ num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances WHERE element = '{0}' AND ion = '{1}' AND
         (abundance < -3)""".format(element, ion))
 
-# Non-physical errors
-flag_id = ges.flags.retrieve_or_create("Abundance error is non-physical")
-num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = '{1}' AND
-        e_abundance > 1""".format(element, ion))
-
-
 # No differential biases available. Solar biases are available for most lines.
 
 # Calculate biases and apply them.

@@ -196,6 +196,8 @@ def parse_line_abundances(filename):
     return rows
 
 
+
+
 def create_tables(connection):
 
     cursor = connection.cursor()
@@ -243,6 +245,7 @@ if __name__ == "__main__":
 
     cursor.execute("create index cname_species_index on line_abundances (cname, element, ion);")
     cursor.execute("create index wavelength_index on line_abundances (wavelength);")
+    #create index homogenised_cname_species_index on homogenised_line_abundances (cname, element, ion);
     cursor.close()
     connection.commit()
     

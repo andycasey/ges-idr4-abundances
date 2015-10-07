@@ -8,11 +8,6 @@ import release
 database, element, ion = ("arc", "Nd", 2)
 ges = release.DataRelease(database)
 
-# Non-physical errors
-flag_id = ges.flags.retrieve_or_create("Abundance error is non-physical")
-num_rows = ges.flags.update([flag_id],
-    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = '{1}' AND
-        e_abundance > 1""".format(element, ion))
 
 # Lumba reports some unusual measurements.
 flag_id = ges.flags.retrieve_or_create("Abundance is non-physical")
