@@ -39,8 +39,8 @@ num_rows = ges.flags.update([flag_id],
 # EPINARBO is systematically higher than all other nodes, particularly for giants
 # (Confirm that EPINARBO used HFS)
 
-# Calculate biases and apply them.
-species_biases = ges.biases.differential(element, ion)
+# Calculate biases and apply them (Use Solar, not differential)
+species_biases = ges.biases.solar(element, ion)
 for node in species_biases:
     for wavelength, (bias, sigma, N) in species_biases[node].items():
         rows = ges.biases.apply_offset(element, ion, node, wavelength, -bias)

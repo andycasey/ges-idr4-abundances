@@ -8,6 +8,12 @@ import release
 database, element, ion = ("arc", "Ce", 2)
 ges = release.DataRelease(database)
 
+# Non-physical errors
+flag_id = ges.flags.retrieve_or_create("Abundance error is non-physical")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = '{1}' AND
+        e_abundance > 1""".format(element, ion))
+
 # CAUP Ce 2 abundances for the 4773.9 line are mostly exactly zero. There must
 # be a bug in their code.
 flag_id = ges.flags.retrieve_or_create("Error suspected: abundance is frequently zero")

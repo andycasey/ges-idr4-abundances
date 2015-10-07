@@ -31,13 +31,11 @@ num_rows = ges.flags.update([flag_id],
 # apply either because Mo 1 was not measured in the Sun by MyGIsFOS, and the
 # solar temperature is outside of the valid range that we just applied.
 
-"""
 # Calculate biases and apply them.
-species_biases = ges.biases.differential(element, ion)
+species_biases = ges.biases.solar(element, ion)
 for node in species_biases:
     for wavelength, (bias, sigma, N) in species_biases[node].items():
         rows = ges.biases.apply_offset(element, ion, node, wavelength, -bias)
-"""
 
 # Perform the homogenisation.
 ges.homogenise.species(element, ion)
