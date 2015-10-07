@@ -54,7 +54,7 @@ class AbundanceHomogenisation(object):
         cnames = self.release.retrieve_column(
             """SELECT DISTINCT ON (cname) cname FROM line_abundances
             WHERE trim(element) = %s AND ion = %s ORDER BY cname ASC""",
-            (element, ion))
+            (element, ion), asarray=True)
 
         # For each wavelength, approximate the covariance matrix then homogenise
         # this wavelength for all cnames.
