@@ -464,6 +464,7 @@ class DataRelease(object):
         now = datetime.now()
         image[0].header["DATETAB"] = "{0:02d}-{1:02d}-{2:02d}".format(
             now.year, now.month, now.day)
+        image[extension].header["EXTNAME"] = "WGParametersWGAbundances"
 
         unmatched = []
         updates = {}
@@ -501,7 +502,7 @@ class DataRelease(object):
             # Find abundances related to this CNAME and filename.
             results = self.retrieve_table(
                 """SELECT * FROM homogenised_abundances WHERE cname = %s
-                AND TRIM(spectrum_filename_stub) = %s""",
+                AND TRIM(spectrum_filename_stub) = %s AND abundance <> 'NaN'""",
                 (cname, spectrum_filename_stub))
 
             if results is None or len(results) == 0:
@@ -551,7 +552,7 @@ class DataRelease(object):
                 if upper_column not in updates:
                     upper_column = "UPPER_COMBINED_{}".format(species)
 
-                logger.info("Updating row {0}/{1} ({2}/{3}) with {4}".format(
+                logger.debug("Updating row {0}/{1} ({2}/{3}) with {4}".format(
                     i + 1, N, cname, spectrum_filename_stub, species))
 
                 # Fill up the arrays.
@@ -565,12 +566,13 @@ class DataRelease(object):
 
         if len(unmatched) > 0:
             logger.warn("There were {0} unmatched sequences of CNAME and the "\
-                "spectrum filename stub:\n{1}".format(len(unmatched),
-                    "\n".join(unmatched)))
+                "spectrum filename stub".format(len(unmatched)))
 
         # Update from updaters
         for column, values in updates.items():
-            logger.info("Updating array {}".format(column))
+            logger.debug("Updating array {}".format(column))
+            if column.startswith("NN_") or column.startswith("NL_"):
+                values[values < 1] = -1
             image[extension].data[column] = values
 
         image.writeto(output_filename, clobber=True)
