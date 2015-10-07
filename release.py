@@ -399,8 +399,8 @@ class DataRelease(object):
         return rows if not asarray else np.array(rows).flatten()
 
 
-    def export_fits(self, template_filename, output_filename, clobber=False,
-        rounding=2):
+    def export_fits(self, template_filename, output_filename, extension=1,
+        rounding=2, clobber=False):
         """
         Export the homogenised stellar abundances to FITS format using the
         node template filename provided.
@@ -417,6 +417,19 @@ class DataRelease(object):
         :type output_filename:
             str
 
+        :param extension: [optional]
+            The index of the extension to write the results into.
+
+        :type extension:
+            int
+
+        :param rounding: [optional]
+            The number of significant figures to write to the FITS file for the
+            abundance and error columns. Set `None` for no rounding.
+
+        :type rounding:
+            int or None
+
         :param clobber: [optional]
             Overwrite the existing `output_filename` if it already exists.
 
@@ -424,7 +437,10 @@ class DataRelease(object):
             bool
 
         :returns:
-            True if the file was successfully produced.
+            The list of (cname, filename, filename_stub) pairs that were in the
+            template file but were not matched to anything in the database, or
+            True if the file was successfully produced without any missing
+            rows.
         """
 
         # Check that we wont overwrite the image
@@ -449,13 +465,32 @@ class DataRelease(object):
         image[0].header["DATETAB"] = "{0:02d}-{1:02d}-{2:02d}".format(
             now.year, now.month, now.day)
 
-        N = len(image[1].data)
-
         unmatched = []
+        updates = {}
+        N = len(image[extension].data)
+
+        # It's *way* faster to create arrays in dictionaries and update the
+        # values there, then put those into the table at the end, instead of
+        # updating each row in the table.
+        all_species = self.retrieve_table("""SELECT DISTINCT ON (element, ion)
+            element, ion FROM homogenised_abundances""")
+        for row in all_species:
+            species = \
+                "{0}{1}".format(row["element"].upper().strip(), row["ion"])
+
+            formats = ["{}", "E_{}", "NN_{}", "NL_{}"]
+            fillers = [np.nan, np.nan, -1, -1, 0]
+            upper_column = "UPPER_{}".format(species)
+            if upper_column not in image[extension].data.dtype.names:
+                upper_column = "UPPER_COMBINED_{}".format(species)
+            formats.append(upper_column)
+
+            for format, filler in zip(formats, fillers):
+                updates[format.format(species)] = np.array([filler] * N)
 
         # For each cname / spectrum_filename_stub extract the abundances
-        for i, (cname, filename) \
-        in enumerate(zip(image[1].data["CNAME"], image[1].data["FILENAME"])):
+        for i, (cname, filename) in enumerate(zip(image[extension].data["CNAME"],
+            image[extension].data["FILENAME"])):
 
             # Generate the spectrum filename stub.
             filenames = filename.split("|")
@@ -472,7 +507,7 @@ class DataRelease(object):
             if results is None or len(results) == 0:
                 unmatched.append((cname, spectrum_filename_stub))
                 logger.warn("No matches for {0}/{1}".format(
-                    cname, spectrum_filename_stub))
+                    cname, filename, spectrum_filename_stub))
                 continue
 
             # This is a problem for future Andy
@@ -510,36 +545,36 @@ class DataRelease(object):
             # NL_[ELEMENT][ion ] = num_lines
 
             for row in results:
-
                 species = \
                     "{0}{1}".format(row["element"].upper().strip(), row["ion"])
+                upper_column = "UPPER_{}".format(species)
+                if upper_column not in updates:
+                    upper_column = "UPPER_COMBINED_{}".format(species)
 
                 logger.info("Updating row {0}/{1} ({2}/{3}) with {4}".format(
                     i + 1, N, cname, spectrum_filename_stub, species))
 
-                image[1].data[species][i] = rounder(row["abundance"])
-                image[1].data["E_{}".format(species)] \
-                    = rounder(row["e_abundance"])
-                image[1].data["NN_{}".format(species)] \
-                    = row["num_measurements"]
-                #image[1].data["ENN_{}".format(species)]
-                image[1].data["NL_{}".format(species)] = row["num_lines"]
+                # Fill up the arrays.
+                updates[species][i] = rounder(row["abundance"])
+                updates["E_{}".format(species)][i] = rounder(row["e_abundance"])
 
-                upper_column = "UPPER_{}".format(species)
-                if upper_column not in image[1].data.dtype.names:
-                    upper_column = "UPPER_COMBINED_{}".format(species)
+                updates["NN_{}".format(species)][i] = row["num_measurements"]
+                #updates["ENN_{}".format(species)]
+                updates["NL_{}".format(species)][i] = row["num_lines"]
+                updates[upper_column][i] = row["upper_abundance"]
 
-                image[1].data[upper_column] = row["upper_abundance"]
-                
-        if len(unmatched):
+        if len(unmatched) > 0:
             logger.warn("There were {0} unmatched sequences of CNAME and the "\
                 "spectrum filename stub:\n{1}".format(len(unmatched),
                     "\n".join(unmatched)))
 
-        image.write(output_filename, clobber=True)
+        # Update from updaters
+        for column, values in updates.items():
+            logger.info("Updating array {}".format(column))
+            image[extension].data[column] = values
+
+        image.writeto(output_filename, clobber=True)
         logger.info("Exported homogenised abundances to {0}".format(
             output_filename))
-        
-        raise a
 
-        return True
+        return unmatched or True
