@@ -1201,7 +1201,7 @@ class AbundancePlotting(object):
             ydim = lb * yscale + ys + tr * yscale
 
             # In case xdim > 400
-            scale /= 2.
+            scale -= 0.1
 
         logger.debug("Requesting figure size: {0}, {1}".format(xdim, ydim))
         fig, axes = plt.subplots(N_nodes, N_lines, figsize=(xdim, ydim))
@@ -1590,8 +1590,8 @@ class AbundancePlotting(object):
         return fig
 
 
-    def homogenised_abundance_uncertainties(self, element, ion, bins=50,
-        x_extent=(0, 0.5)):
+    def homogenised_line_abundance_uncertainties(self, element, ion, bins=50,
+        x_extent=None):
         """
         Draw histograms showing the distribution of uncertainties in each line
         abundance for the given element.
@@ -1677,6 +1677,94 @@ class AbundancePlotting(object):
         ax.set_ylabel("Normalised count")
 
         return fig
+
+
+    def homogenised_abundance_uncertainties(self, element, ion, bins=50,
+        x_extent=None):
+        """
+        Draw histograms showing the distribution of uncertainties in each star's
+        abundance for the given element.
+
+        :param element:
+            The elemental abundance of interest.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element of interest (1 = neutral).
+
+        :type ion:
+            int
+
+        :param bins: [optional]
+            The number of bins to have. The default number is 20.
+
+        :type bins:
+            int
+
+        :param x_extent: [optional]
+            The range of values to display in the x-axis.
+
+        :type x_extent:
+            None or two-length tuple
+
+        :returns:
+            A single-panel figure showing the distributions of homogenised
+            abundance uncertainties for the given element.
+        """
+
+        # Get all of the homogenised line data for this element and ion.
+        data = self.release.retrieve_table(
+            """SELECT e_abundance FROM homogenised_abundances
+            WHERE TRIM(element) = %s AND ion = %s AND e_abundance <> 'NaN'""",
+            (element, ion))
+        if data is None: return None
+
+        extent = x_extent \
+            or (np.nanmin(data["e_abundance"]), np.nanmax(data["e_abundance"]))
+        bins = np.linspace(extent[0], extent[1], 1 + bins)
+
+        hist_kwargs = {
+            "color": "#666666",
+            "histtype": "step",
+            "bins": bins,
+            "normed": True
+        }
+        fig, ax = plt.subplots(1)
+
+        for group in data.groups:
+            if np.any((group["e_abundance"] > hist_kwargs["bins"][0]) * \
+                (group["e_abundance"] < hist_kwargs["bins"][-1])):
+                ax.hist(group["e_abundance"], **hist_kwargs)
+            else:
+                logger.warn("Skipping over {0} {1} elements because they are "\
+                    "outside the display range".format(element, ion))
+
+        # Show the full distribution as a thick line.
+        hist_kwargs.update({
+            "lw": 3,
+            "color": "k"
+        })
+        hist_kwargs["lw"] = 3
+
+        if np.any((data["e_abundance"] > hist_kwargs["bins"][0]) * \
+            (data["e_abundance"] < hist_kwargs["bins"][-1])):
+            ax.hist(data["e_abundance"], **hist_kwargs)
+
+        else:
+            logger.warn("ALL ELEMENTAL ABUNDANCE UNCERTAINTIES FOR {0} {1} ARE"\
+                " OUTSIDE THE DISPLAY RANGE".format(element, ion))
+
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+
+        ax.set_xlabel(r"$\sigma_{" + element + "\,{0}".format(ion) \
+            + r"}$ $({\rm dex})$")
+        ax.set_ylabel("Normalised count")
+
+        return fig
+
 
 
 def latexify(label):
