@@ -185,7 +185,20 @@ class AbundanceHomogenisation(object):
         if line_abundances is None: return
         line_abundances = line_abundances.group_by(["spectrum_filename_stub"])
 
+        clip_outliers = kwargs.pop("clip_outliers", 5)
+
         for i, group in enumerate(line_abundances.groups):
+
+            """
+            # Any really bad outliers?
+            if clip_outliers and clip_outliers is not None:
+                sigma = np.nanstd(group["abundance"])
+                outlier = np.abs(group["abundance"] - np.nanmean(group["abundance"]))
+                is_outlier = outlier > clip_outliers
+
+                # Remove this from the group
+                group = group[~is_outlier]
+            """
 
             # Calculate a weighted mean and variance.
             # TODO: currently ignoring the covariance between lines.
@@ -198,7 +211,7 @@ class AbundanceHomogenisation(object):
             # Update the line abundance.
             assert len(group) == len(set(group["wavelength"]))
             N_lines = len(set(group["wavelength"]))
-            N_measurements = sum(line_abundances["num_measurements"])
+            N_measurements = np.sum(np.isfinite(group["abundance"]))
 
             result = self.insert_spectrum_abundance(element, ion,
                 group["cname"][0], group["spectrum_filename_stub"][0],
