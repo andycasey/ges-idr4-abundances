@@ -9,6 +9,12 @@ import release
 database, element, ion = ("arc", "Na", 1)
 ges = release.DataRelease(database)
 
+# Non-physical errors
+flag_id = ges.flags.retrieve_or_create("Abundance error is non-physical")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = '{1}' AND
+        e_abundance > 1""".format(element, ion))
+
 # Lines bluer than 4982.8 are generally only measured in a few stars by one node
 flag_id = ges.flags.retrieve_or_create(
     "Not an ideal line for analysis")
