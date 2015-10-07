@@ -37,12 +37,12 @@ num_rows = ges.flags.update([flag_id],
         AND l.cname = n.cname and n.feh < -2.5 AND
         (l.wavelength > 4803 AND l.wavelength < 4805))""".format(element, ion))
 
-# EPINARBO @ 5936.2 for FEH < -2
+# ULB @ 5936.2 for FEH < -2.5
 num_rows = ges.flags.update([flag_id],
     """SELECT id FROM line_abundances l JOIN (SELECT DISTINCT (cname) cname, feh
         FROM node_results) n ON (
-        l.element = '{0}' AND l.ion = '{1}' AND l.node LIKE 'EPINARBO%'
-        AND l.cname = n.cname and n.feh < -2 AND
+        l.element = '{0}' AND l.ion = '{1}' AND l.node LIKE 'ULB%'
+        AND l.cname = n.cname and n.feh < -2.5 AND
         (l.wavelength > 5936 AND l.wavelength < 5937))""".format(element, ion))
 
 # 4921.8 line looks no good
