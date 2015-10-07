@@ -128,15 +128,17 @@ class AbundanceHomogenisation(object):
         if self.release.config.wavelength_tolerance > 0:   
             measurements = self.release.retrieve_table("""SELECT * 
                 FROM line_abundances
-                WHERE trim(element) = %s AND ion = %s AND cname = %s AND flags = 0
+                WHERE trim(element) = %s AND ion = %s AND cname = %s 
+                AND flags = 0 AND abundance <> 'NaN'
                 AND wavelength >= %s AND wavelength <= %s ORDER BY node ASC""",
                 (element, ion, cname,
                     wavelength - self.release.config.wavelength_tolerance,
                     wavelength + self.release.config.wavelength_tolerance))
         else:
             measurements = self.release.retrieve_table("""SELECT *
-                FROM line_abundances WHERE trim(element) = %s AND ion = %s AND cname 
-                %s AND flags = 0 AND wavelength = %s ORDER BY node ASC""",
+                FROM line_abundances WHERE trim(element) = %s AND ion = %s 
+                AND cname = %s AND flags = 0 AND abundance <> 'NaN'
+                AND wavelength = %s ORDER BY node ASC""",
                 (element, ion, cname, wavelength))
         if measurements is None: return
         
