@@ -1212,6 +1212,7 @@ class AbundancePlotting(object):
             top=(tr * yscale + ys)/ydim,
             wspace=wspace, hspace=hspace)
         axes = np.atleast_2d(axes)
+        if axes.shape[0] == 1: axes = axes.T
 
         for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
 
@@ -1220,6 +1221,7 @@ class AbundancePlotting(object):
                 match_homogenised_wavelength \
                     = (homogenised_data["wavelength"] == wavelength)
 
+            assert len(node_axes) == len(nodes)
             for j, (ax, node) in enumerate(zip(node_axes, nodes)):
 
                 # Labels and titles
@@ -1241,7 +1243,8 @@ class AbundancePlotting(object):
 
                 x = ax_data[reference_column][match]
                 y = ax_data["abundance"][match]                 
-                if len(x) == 0: continue
+                if len(x) == 0:
+                    continue
 
                 if abundance_format == "x_h":
                     y -= utils.solar_abundance(element)
@@ -1569,7 +1572,8 @@ class AbundancePlotting(object):
                 # Recall Nx = 1 + len(nodes) t.f. len(nodes) - 1 = Nx - 2
                 node_x \
                     = np.tile(data_table[parameter].astype(float)[mask], Nx - 2)
-                if len(node_x) == 0: continue
+                if len(node_x) == 0:
+                    continue
                 
                 # Need the node_y abundances to be log_x(NODE A) - log_x(ALL)
                 node_y = np.hstack([
@@ -1629,7 +1633,7 @@ class AbundancePlotting(object):
         data = self.release.retrieve_table(
             """SELECT wavelength, e_abundance FROM homogenised_line_abundances
             WHERE TRIM(element) = %s AND ion = %s AND e_abundance <> 'NaN'
-            ORDER BY wavelength ASC""", (element, ion))
+            AND upper_abundance = 0 ORDER BY wavelength ASC""", (element, ion))
         if data is None: return None
 
         data = data.group_by(["wavelength"])
@@ -1717,7 +1721,8 @@ class AbundancePlotting(object):
         # Get all of the homogenised line data for this element and ion.
         data = self.release.retrieve_table(
             """SELECT e_abundance FROM homogenised_abundances
-            WHERE TRIM(element) = %s AND ion = %s AND e_abundance <> 'NaN'""",
+            WHERE TRIM(element) = %s AND ion = %s AND e_abundance <> 'NaN'
+            AND upper_abundance = 0""",
             (element, ion))
         if data is None: return None
 
