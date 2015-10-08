@@ -44,7 +44,6 @@ class AbundanceHomogenisation(object):
         # Drop index if it exists.
         self.release.execute(
             "DROP INDEX IF EXISTS homogenised_line_abundances_species_index")
-
         self.release.commit()
 
         # Get the unique wavelengths.
@@ -72,24 +71,28 @@ class AbundanceHomogenisation(object):
         for i, wavelength in enumerate(set(wavelengths)):
             # Calculate the correlation coefficients for this line.
             X, nodes = self.release._match_line_abundances(element, ion, 
-                wavelength, column, ignore_gaps=True, 
+                wavelength, column, ignore_gaps=True, include_limits=False,
                 include_flagged_lines=False, **kwargs)
-            rho = np.atleast_2d(np.corrcoef(X))
-            cov = np.atleast_2d(np.cov(X))
+            if X is None:
+                rho, cov = None, None
+            else:
+                rho = np.atleast_2d(np.corrcoef(X))
+                cov = np.atleast_2d(np.cov(X))
 
             # For each cname, homogenise this line.
             for j, cname in enumerate(cnames):
                 self.line_abundances(element, ion, cname, wavelength, rho, cov,
                     nodes, **kwargs)
 
-        # Create an index to speed things up.
-        self.release.execute("""CREATE UNIQUE INDEX
-            homogenised_line_abundances_species_index
-            ON homogenised_line_abundances (cname, element, ion)""")
-
         # Need to commit before we can do the averaged results per star.
         self.release.commit()
 
+        # Create an index to speed things up.
+        self.release.execute("""CREATE INDEX
+            homogenised_line_abundances_species_index
+            ON homogenised_line_abundances (cname, element, ion)""")
+        self.release.commit()
+        
         for j, cname in enumerate(cnames):
             self.spectrum_abundances(element, ion, cname, **kwargs)
 
@@ -161,12 +164,12 @@ class AbundanceHomogenisation(object):
         measurements = measurements.group_by(["spectrum_filename_stub"])
         for i, group in enumerate(measurements.groups):
 
-            mean, sigma, N = _homogenise_spectrum_line_abundances(
+            mean, sigma, N, is_limit = _homogenise_spectrum_line_abundances(
                 group, rho, cov, nodes, **kwargs)
 
             stub = group["spectrum_filename_stub"][0]
             results[stub] = self.insert_line_abundance(element, ion, cname,
-                stub, wavelength, mean, sigma, N)
+                stub, wavelength, mean, sigma, N, is_limit)
             
         return results
 
@@ -217,24 +220,30 @@ class AbundanceHomogenisation(object):
                 # Remove this from the group
                 group = group[~is_outlier]
             """
+            if np.all(group["upper_abundance"] == 1):
+                self.insert_spectrum_abundance(element, ion,
+                    group["cname"][0], group["spectrum_filename_stub"][0],
+                    group["abundance"][0], group["e_abundance"][0],
+                    1, len(group), True)
+                
+            else:
+                # Calculate a weighted mean and variance.
+                # TODO: currently ignoring the covariance between lines.
+                inv_variance = 1.0/(group["e_abundance"]**2)
+                weights = inv_variance/np.sum(inv_variance)
 
-            # Calculate a weighted mean and variance.
-            # TODO: currently ignoring the covariance between lines.
-            inv_variance = 1.0/(group["e_abundance"]**2)
-            weights = inv_variance/np.sum(inv_variance)
+                mu = np.sum(group["abundance"] * weights)
+                sigma = np.sqrt(np.sum(weights**2 * group["e_abundance"]**2))
 
-            mu = np.sum(group["abundance"] * weights)
-            sigma = np.sqrt(np.sum(weights**2 * group["e_abundance"]**2))
+                # Update the line abundance.
+                assert len(group) == len(set(group["wavelength"]))
+                N_lines = len(set(group["wavelength"]))
+                N_measurements = np.sum(np.isfinite(group["abundance"]))
 
-            # Update the line abundance.
-            assert len(group) == len(set(group["wavelength"]))
-            N_lines = len(set(group["wavelength"]))
-            N_measurements = np.sum(np.isfinite(group["abundance"]))
-
-            result = self.insert_spectrum_abundance(element, ion,
-                group["cname"][0], group["spectrum_filename_stub"][0],
-                mu, sigma, N_lines, N_measurements)
-        
+                result = self.insert_spectrum_abundance(element, ion,
+                    group["cname"][0], group["spectrum_filename_stub"][0],
+                    mu, sigma, N_lines, N_measurements, False)
+            
         # TODO: what should we return?
         # TODO: should we average the abundances from multiple spectra?
         return None
@@ -242,7 +251,7 @@ class AbundanceHomogenisation(object):
 
     def insert_line_abundance(self, element, ion, cname, 
         spectrum_filename_stub, wavelength, abundance, uncertainty,
-        num_measurements, node_bitmask=0):
+        num_measurements, is_limit, node_bitmask=0):
         """
         Update the homogenised line abundance for a given CNAME, species
         (element and ion), and wavelength.
@@ -288,6 +297,12 @@ class AbundanceHomogenisation(object):
 
         :type num_measurements:
             int
+
+        :param is_limit:
+            Whether the supplied values are an upper limit or not.
+
+        :type is_limit:
+            bool
         """
 
         # Does this record already exist? If so remove it.
@@ -308,7 +323,7 @@ class AbundanceHomogenisation(object):
                 "ion": ion,
                 "abundance": abundance,
                 "e_abundance": uncertainty,
-                "upper_abundance": 0, # TODO
+                "upper_abundance": int(is_limit),
                 "num_measurements": num_measurements,
                 "node_bitmask": node_bitmask
             })[0][0]
@@ -316,7 +331,7 @@ class AbundanceHomogenisation(object):
 
     def insert_spectrum_abundance(self, element, ion, cname, 
         spectrum_filename_stub, abundance, uncertainty, num_lines, 
-        num_measurements, **kwargs):
+        num_measurements, is_limit, **kwargs):
         """
         Update the homogenised abundance for a species (element and ion) as 
         measured in a spectrum (CNAME and spectrum filename stub).
@@ -390,7 +405,7 @@ class AbundanceHomogenisation(object):
                 "e_abundance": uncertainty,
                 "num_measurements": num_measurements,
                 "num_lines": num_lines,
-                "upper_abundance": 0, # TODO
+                "upper_abundance": int(is_limit),
             })[0][0]
 
 
@@ -410,7 +425,18 @@ def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
         return (np.nan, np.nan, -1)
 
     # Problems to address later:
-    assert np.all(measurements["upper_abundance"] == 0)
+    if np.any(measurements["upper_abundance"] > 0):
+        # If we have measurements and upper limits, we will be conservative and
+        # take the highest upper limit available.
+
+        is_limit = measurements["upper_abundance"] == 1
+        limits = measurements[column][is_limit]
+        return (np.nanmax(limits), np.nanstd(limits), sum(is_limit), True)
+
+    if nodes is None:
+        nodes = measurements["node"]
+    if cov is None:
+        cov = np.eye(len(nodes)) * 0.2**2
 
     abundance = np.nan * np.ones(len(nodes))
     u_abundance = np.nan * np.ones(len(nodes))
@@ -442,7 +468,10 @@ def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
 
     sigmas = np.tile(u_abundance, N).reshape(N, N)
     sigmas = np.multiply(sigmas, sigmas.T)
-    cov = np.multiply(rho[mask].reshape(N, N), sigmas)
+    if rho is not None:
+        cov = np.multiply(rho[mask].reshape(N, N), sigmas)
+    else:
+        cov = sigmas
 
     # Calculate the weights
     inv_variance = 1.0/(u_abundance**2)
@@ -459,4 +488,4 @@ def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
     assert np.isfinite(abundance_mean * abundance_sigma)
 
     # Place this information in the homogenised abundance table.
-    return (abundance_mean, abundance_sigma, N)
+    return (abundance_mean, abundance_sigma, N, False)
