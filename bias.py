@@ -92,16 +92,19 @@ class AbundanceBiases(object):
             int
         """
 
-        X, nodes, diff_data = utils.match_node_abundances(self.release._database,
-            element, ion, scaled=scaled, ignore_flags=ignore_flags)
+        X, nodes, diff_data = self.release._match_species_abundances(
+            element, ion, scaled=scaled, include_flagged_lines=~ignore_flags)
+
+        #X, nodes, diff_data = utils.match_node_abundances(self.release._database,
+        #    element, ion, scaled=scaled, ignore_flags=ignore_flags)
 
         # Calculate the full differential abundances.
         X_diff, indices = utils.calculate_differential_abundances(X,
             full_output=True)
 
         # Determine the differences to each node.
-        diff_data["wavelength"] = np.round(diff_data["wavelength"], 1)
-        wavelengths = set(diff_data["wavelength"])
+        diff_data["wavelength"] = diff_data["wavelength"].astype(float)
+        wavelengths = sorted(set(diff_data["wavelength"]))
 
         bias = { n: { w: (0, np.nan, -1) for w in wavelengths } for n in nodes }
         for wavelength in wavelengths:
@@ -118,7 +121,8 @@ class AbundanceBiases(object):
 
             def differential_sigma(biases):
                 # Apply the biases on a per-column basis.
-                X_offsets = np.zeros(X_wl.shape[1])
+
+                X_offsets = np.zeros(X)
                 for i, idx in enumerate(indices):
 
                     # These are Node_0 - Node_1
@@ -137,7 +141,7 @@ class AbundanceBiases(object):
 
             result = op.fmin(differential_sigma, np.zeros(len(finite_nodes)), 
                 disp=False)
-            
+
             initial = differential_sigma(np.zeros(len(finite_nodes)))
             final = differential_sigma(result)
 

@@ -387,10 +387,10 @@ class AbundancePlotting(object):
                 X_diff_wavelength_node = np.hstack([[-1, +1][j == idx[0]] * \
                     X_diff_wavelength[:, k].flatten() \
                     for k, idx in enumerate(indices) if j in idx])
-
+                
                 if np.any(np.isfinite(X_diff_wavelength_node)) and \
-                    np.any((np.nanmin(X_diff_wavelength_node) > bin_min) * \
-                    (bin_max > np.nanmax(X_diff_wavelength_node))):
+                    np.any((X_diff_wavelength_node > bin_min) * \
+                    (bin_max > X_diff_wavelength_node)):
                     ax.hist(X_diff_wavelength_node, color=colors[node],
                         **hist_kwds)
                 
