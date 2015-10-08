@@ -204,7 +204,7 @@ class DataRelease(object):
 
 
     def _match_line_abundances(self, element, ion, wavelength, column,
-        ignore_gaps=False, include_flagged_lines=False):
+        ignore_gaps=False, include_flagged_lines=False, include_limits=False):
 
         tol = self.config.wavelength_tolerance
         measurements = self.retrieve_table(
@@ -212,8 +212,10 @@ class DataRelease(object):
             """ FROM line_abundances WHERE trim(element) = %s
             AND ion = %s {flag_query} AND wavelength >= %s
             AND wavelength <= %s""".format(
+                limits_query="" if include_limits else "AND upper_abundance = 0",
                 flag_query="AND flags = 0" if not include_flagged_lines else ""),
                 (element, ion, wavelength - tol, wavelength + tol))
+        if measurements is None: return (None, None)
         measurements = measurements.group_by(["spectrum_filename_stub"])
 
         nodes = sorted(set(measurements["node"]))
