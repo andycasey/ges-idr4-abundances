@@ -137,10 +137,6 @@ num_rows = ges.flags.update([flag_id],
         ))""".format(
     element, ion))
 
-
-
-
-
 # Calculate biases and apply them.
 species_biases = ges.biases.differential(element, ion)
 for node in species_biases:

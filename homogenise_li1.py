@@ -13,9 +13,9 @@ ges = release.DataRelease(database)
 # in extract_from_node_results.py
 
 # Set all wavelengths to the same value.
-ges.release.execute("""UPDATE line_abundances SET wavelength = 6707.8 WHERE
+ges.execute("""UPDATE line_abundances SET wavelength = 6707.8 WHERE
     element = '{0}' AND ion = {1}""".format(element, ion))
-ges.release.commit()
+ges.commit()
 
 # The ULB results are well-offset from the Sun, and are offset from all other
 # nodes.
@@ -33,14 +33,20 @@ num_rows = ges.flags.update([flag_id],
         AND l.ion = {1} AND n.feh < -2.5 AND l.node LIKE 'EPINARBO%')""".format(
         element, ion))
 
+# OACT provides Li abundances for stars without metallicity. Suspicious.
+flag_id = ges.flags.retrieve_or_create(
+    "Star does not have a metallicity, therefore no abundance should be available")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) cname,
+        feh, teff, logg FROM node_results) n ON (l.cname = n.cname
+        AND l.element = '{0}' AND l.ion = {1} AND l.abundance <> 'NaN'
+        and n.feh IS NULL)""".format(element, ion))
 
 # Calculate biases and apply them.
-"""
 species_biases = ges.biases.differential(element, ion)
 for node in species_biases:
     for wavelength, (bias, sigma, N) in species_biases[node].items():
         rows = ges.biases.apply_offset(element, ion, node, wavelength, -bias)
-"""
 
 # Perform the homogenisation.
 ges.homogenise.species(element, ion)
