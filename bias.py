@@ -95,6 +95,7 @@ class AbundanceBiases(object):
         X, nodes, diff_data = self.release._match_species_abundances(
             element, ion, scaled=scaled, include_flagged_lines=~ignore_flags)
 
+
         #X, nodes, diff_data = utils.match_node_abundances(self.release._database,
         #    element, ion, scaled=scaled, ignore_flags=ignore_flags)
 
@@ -121,8 +122,7 @@ class AbundanceBiases(object):
 
             def differential_sigma(biases):
                 # Apply the biases on a per-column basis.
-
-                X_offsets = np.zeros(X)
+                X_offsets = np.zeros(X_wl.shape[1])
                 for i, idx in enumerate(indices):
 
                     # These are Node_0 - Node_1
@@ -142,6 +142,7 @@ class AbundanceBiases(object):
             result = op.fmin(differential_sigma, np.zeros(len(finite_nodes)), 
                 disp=False)
 
+            
             initial = differential_sigma(np.zeros(len(finite_nodes)))
             final = differential_sigma(result)
 
