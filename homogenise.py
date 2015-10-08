@@ -33,13 +33,11 @@ class AbundanceHomogenisation(object):
             int
         """
 
-        element += "" if len(element) > 1 else " "
-
         # Remove any existing homogenised line or average abundances.
         self.release.execute("""DELETE FROM homogenised_line_abundances
-            WHERE element = %s AND ion = %s""", (element, ion))
+            WHERE TRIM(element) = %s AND ion = %s""", (element, ion))
         self.release.execute("""DELETE FROM homogenised_abundances
-            WHERE element = %s AND ion = %s""", (element, ion))
+            WHERE TRIM(element) = %s AND ion = %s""", (element, ion))
 
         # Drop index if it exists.
         self.release.execute(
@@ -49,7 +47,7 @@ class AbundanceHomogenisation(object):
         # Get the unique wavelengths.
         wavelengths = self.release.retrieve_column(
             """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
-            WHERE element = %s AND ion = %s AND flags = 0
+            WHERE TRIM(element) = %s AND ion = %s AND flags = 0
             ORDER BY wavelength ASC""", (element, ion), asarray=True)
 
         if self.release.config.round_wavelengths >= 0:
@@ -59,7 +57,7 @@ class AbundanceHomogenisation(object):
         # Get the unique CNAMEs.
         cnames = self.release.retrieve_column(
             """SELECT DISTINCT ON (cname) cname FROM line_abundances
-            WHERE element = %s AND ion = %s ORDER BY cname ASC""",
+            WHERE TRIM(element) = %s AND ion = %s ORDER BY cname ASC""",
             (element, ion), asarray=True)
 
         # For each wavelength, approximate the covariance matrix then homogenise
@@ -73,25 +71,26 @@ class AbundanceHomogenisation(object):
             X, nodes = self.release._match_line_abundances(element, ion, 
                 wavelength, column, ignore_gaps=True, include_limits=False,
                 include_flagged_lines=False, **kwargs)
-            if X is None:
-                rho, cov = None, None
-            else:
-                rho = np.atleast_2d(np.corrcoef(X))
-                cov = np.atleast_2d(np.cov(X))
 
             # For each cname, homogenise this line.
             for j, cname in enumerate(cnames):
-                self.line_abundances(element, ion, cname, wavelength, rho, cov,
-                    nodes, **kwargs)
+                self.line_abundances(element, ion, cname, wavelength, nodes,
+                    matrix=X, **kwargs)
 
         # Need to commit before we can do the averaged results per star.
         self.release.commit()
 
         # Create an index to speed things up.
-        self.release.execute("""CREATE INDEX
-            homogenised_line_abundances_species_index
-            ON homogenised_line_abundances (cname, element, ion)""")
-        self.release.commit()
+        # To prevent parallel problems, first check that the index has not been
+        # created by a parallel homogenisation script.
+        if 1 > self.release.retrieve("""SELECT count(*) FROM pg_indexes
+            WHERE schemaname = 'public' AND tablename = 'line_abundances' AND
+            indexname = 'homogenised_line_abundances_species_index'""")[0][0]:      
+
+            self.release.execute("""CREATE INDEX
+                homogenised_line_abundances_species_index
+                ON homogenised_line_abundances (cname, element, ion)""")
+            self.release.commit()
         
         for j, cname in enumerate(cnames):
             self.spectrum_abundances(element, ion, cname, **kwargs)
@@ -102,8 +101,8 @@ class AbundanceHomogenisation(object):
         return None
 
 
-    def line_abundances(self, element, ion, cname, wavelength, rho, cov, nodes,
-        **kwargs):
+    def line_abundances(self, element, ion, cname, wavelength, nodes=None,
+        matrix=None, **kwargs):
         """
         Homogenise the line abundances for a given element, ion, star and 
         wavelength.
@@ -139,13 +138,11 @@ class AbundanceHomogenisation(object):
             :class:`~np.array`
         """
 
-        element += "" if len(element) > 1 else " "
-
         # Get all valid line abundances for this element, ion, cname.
         if self.release.config.wavelength_tolerance > 0:   
             measurements = self.release.retrieve_table("""SELECT * 
                 FROM line_abundances
-                WHERE element = %s AND ion = %s AND cname = %s 
+                WHERE TRIM(element) = %s AND ion = %s AND cname = %s 
                 AND flags = 0 AND abundance <> 'NaN'
                 AND wavelength >= %s AND wavelength <= %s ORDER BY node ASC""",
                 (element, ion, cname,
@@ -153,7 +150,7 @@ class AbundanceHomogenisation(object):
                     wavelength + self.release.config.wavelength_tolerance))
         else:
             measurements = self.release.retrieve_table("""SELECT *
-                FROM line_abundances WHERE element = %s AND ion = %s 
+                FROM line_abundances WHERE TRIM(element) = %s AND ion = %s 
                 AND cname = %s AND flags = 0 AND abundance <> 'NaN'
                 AND wavelength = %s ORDER BY node ASC""",
                 (element, ion, cname, wavelength))
@@ -165,7 +162,7 @@ class AbundanceHomogenisation(object):
         for i, group in enumerate(measurements.groups):
 
             mean, sigma, N, is_limit = _homogenise_spectrum_line_abundances(
-                group, rho, cov, nodes, **kwargs)
+                group, nodes, matrix=matrix, **kwargs)
 
             stub = group["spectrum_filename_stub"][0]
             results[stub] = self.insert_line_abundance(element, ion, cname,
@@ -197,11 +194,9 @@ class AbundanceHomogenisation(object):
             str
         """
         
-        element += "" if len(element) > 1 else " "
-
         # Get the data for this star/spectrum filename stub.
         line_abundances = self.release.retrieve_table(
-            """SELECT * FROM homogenised_line_abundances WHERE element = %s
+            """SELECT * FROM homogenised_line_abundances WHERE TRIM(element) = %s
             AND ion = %s AND cname = %s""", (element, ion, cname))
         if line_abundances is None: return
         line_abundances = line_abundances.group_by(["spectrum_filename_stub"])
@@ -226,7 +221,10 @@ class AbundanceHomogenisation(object):
                     group["abundance"][0], group["e_abundance"][0],
                     1, len(group), True)
                 
-            else:
+            else:   
+                if group["cname"][0] == "02003047-0049597" and element == "Al" \
+                and ion == 1:
+                    raise DEBUGERROR
                 # Calculate a weighted mean and variance.
                 # TODO: currently ignoring the covariance between lines.
                 inv_variance = 1.0/(group["e_abundance"]**2)
@@ -409,7 +407,7 @@ class AbundanceHomogenisation(object):
             })[0][0]
 
 
-def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
+def _homogenise_spectrum_line_abundances(measurements, nodes=None, matrix=None,
     **kwargs):
 
     # Note that by default we use scaled_abundance, not abundance, such that we
@@ -424,19 +422,22 @@ def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
     if N_measurements == 0:
         return (np.nan, np.nan, -1)
 
-    # Problems to address later:
+    # If we have measurements and upper limits, we will be conservative and
+    # take the highest upper limit available.
     if np.any(measurements["upper_abundance"] > 0):
-        # If we have measurements and upper limits, we will be conservative and
-        # take the highest upper limit available.
-
         is_limit = measurements["upper_abundance"] == 1
         limits = measurements[column][is_limit]
         return (np.nanmax(limits), np.nanstd(limits), sum(is_limit), True)
 
+
     if nodes is None:
         nodes = measurements["node"]
-    if cov is None:
+
+
+    if matrix is None:
         cov = np.eye(len(nodes)) * 0.2**2
+    else:
+        cov = np.cov(matrix)
 
     abundance = np.nan * np.ones(len(nodes))
     u_abundance = np.nan * np.ones(len(nodes))
@@ -468,7 +469,8 @@ def _homogenise_spectrum_line_abundances(measurements, rho, cov, nodes,
 
     sigmas = np.tile(u_abundance, N).reshape(N, N)
     sigmas = np.multiply(sigmas, sigmas.T)
-    if rho is not None:
+    if matrix is not None:
+        rho = np.corrcoef(matrix)
         cov = np.multiply(rho[mask].reshape(N, N), sigmas)
     else:
         cov = sigmas
