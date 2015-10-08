@@ -9,24 +9,38 @@ import release
 database, element, ion = ("arc", "Li", 1)
 ges = release.DataRelease(database)
 
-# Extract OACT results.
-
+# Note: OACT results were extracted from the node results file using the script
+# in extract_from_node_results.py
 
 # Set all wavelengths to the same value.
 ges.release.execute("""UPDATE line_abundances SET wavelength = 6707.8 WHERE
     element = '{0}' AND ion = {1}""".format(element, ion))
 ges.release.commit()
 
-# Need OACT results
-# Need to deal with upper limits from EPINARBO gracefully
-raise NotImplementedError
+# The ULB results are well-offset from the Sun, and are offset from all other
+# nodes.
+flag_id = ges.flags.retrieve_or_create("Spurious results")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances WHERE TRIM(element) = '{0}' AND ion = {1}
+    AND node LIKE 'ULB%'""".format(element, ion))
+
+# EPINARBO shows large scatter for EMP stars.
+flag_id = ges.flags.retrieve_or_create(
+    "Large scatter seen in this line for EMP stars")
+num_rows = ges.flags.update([flag_id],
+    """SELECT id FROM line_abundances l JOIN (SELECT DISTINCT ON (cname) cname,
+        feh FROM node_results) n ON (l.cname = n.cname AND l.element = '{0}'
+        AND l.ion = {1} AND n.feh < -2.5 AND l.node LIKE 'EPINARBO%')""".format(
+        element, ion))
 
 
 # Calculate biases and apply them.
+"""
 species_biases = ges.biases.differential(element, ion)
 for node in species_biases:
     for wavelength, (bias, sigma, N) in species_biases[node].items():
         rows = ges.biases.apply_offset(element, ion, node, wavelength, -bias)
+"""
 
 # Perform the homogenisation.
 ges.homogenise.species(element, ion)
