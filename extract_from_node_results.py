@@ -19,6 +19,27 @@ node, measurement_type, code = ("OACT", "S", "Unknown")
 
 ges = release.DataRelease(database)
 
+
+
+def safe_float(s):
+    try:
+        s = float(s)
+    except (TypeError, ValueError):
+        return np.nan
+    else:
+        return s
+
+def safe_int(s):
+    try:
+        s = int(s)
+    except (TypeError, ValueError):
+        return 0
+    else:
+        return s
+
+
+
+
 # Remove any existing rows in line_abundances for this element from this node?
 if remove_existing:
     logger.info("Deleting existing {0} {1} line abundances from {2}".format(
@@ -58,9 +79,9 @@ for i, node_result_row in enumerate(node_results):
         "ew": np.nan,
         "e_ew": np.nan,
         "upper_ew": 0,
-        "abundance": node_result_row["{0}{1}".format(element.lower(), ion)],
-        "e_abundance": node_result_row["e_{0}{1}".format(element.lower(), ion)],
-        "upper_abundance": node_result_row[upper_column],
+        "abundance": safe_float(node_result_row["{0}{1}".format(element.lower(), ion)]),
+        "e_abundance": safe_float(node_result_row["e_{0}{1}".format(element.lower(), ion)]),
+        "upper_abundance": safe_int(node_result_row[upper_column]),
         "measurement_type": measurement_type,
     }
     line_abundance_row["scaled_abundance"] = line_abundance_row["abundance"]
