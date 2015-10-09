@@ -570,6 +570,26 @@ class DataRelease(object):
             logger.warn("There were {0} unmatched sequences of CNAME and the "\
                 "spectrum filename stub".format(len(unmatched)))
 
+            # Check each one for valid line_abundances:
+            for cname, spectrum_filename_stub in unmatched:
+                any_results = self.retrieve(
+                    """SELECT count(*) FROM line_abundances
+                    WHERE cname = %s AND spectrum_filename_stub = %s""",
+                    (cname, spectrum_filename_stub))[0][0]
+
+                any_valid_results = self.retrieve(
+                    """SELECT count(*) FROM line_abundances
+                    WHERE cname = %s AND spectrum_filename_stub = %s AND
+                    abundance <> 'NaN' AND flags = 0""",
+                    (cname, spectrum_filename_stub))[0][0]
+
+                logger.debug("CNAME/spectrum filename stub/any/any valid: "\
+                    "{0}/{1}/{2}/{3}".format(cname, spectrum_filename_stub,
+                        any_results, any_valid_results))
+
+                if any_valid_results > 0:
+                    raise MissingResultsError
+
         # Update from updaters
         for column, values in updates.items():
             logger.debug("Updating array {}".format(column))
@@ -580,5 +600,7 @@ class DataRelease(object):
         image.writeto(output_filename, clobber=True)
         logger.info("Exported homogenised abundances to {0}".format(
             output_filename))
+
+
 
         return unmatched or True
