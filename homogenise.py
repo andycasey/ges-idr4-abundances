@@ -222,16 +222,25 @@ class AbundanceHomogenisation(object):
                     1, len(group), True)
                 
             else:   
-                if group["cname"][0] == "02003047-0049597" and element == "Al" \
-                and ion == 1:
-                    raise DEBUGERROR
+                #if group["cname"][0] == "02003047-0049597" and element == "Al" \
+                #and ion == 1:
+                #    raise DEBUGERROR
                 # Calculate a weighted mean and variance.
                 # TODO: currently ignoring the covariance between lines.
                 inv_variance = 1.0/(group["e_abundance"]**2)
                 weights = inv_variance/np.sum(inv_variance)
 
                 mu = np.sum(group["abundance"] * weights)
-                sigma = np.sqrt(np.sum(weights**2 * group["e_abundance"]**2))
+                #sigma = np.sqrt(np.sum(weights**2 * group["e_abundance"]**2))
+                #sigma = np.sum(weights * (group["abundance"] - mu)**2)
+
+                # variance of the weighted mean is:
+                # \sigma^2 = \frac{1}{\sum_{i=1}^{n}\sigma_{i}^{-2}}
+                sigma = np.sqrt(1/np.sum(group["e_abundance"]**(-2)))
+
+
+                #mu = np.mean(group["abundance"])
+                #sigma = np.std(group["abundance"])/np.sqrt(len(group))
 
                 # Update the line abundance.
                 assert len(group) == len(set(group["wavelength"]))
@@ -417,6 +426,8 @@ def _homogenise_spectrum_line_abundances(measurements, nodes=None, matrix=None,
     e_column = "e_abundance"
     column = ("abundance", "scaled_abundance")[kwargs.get("scaled", True)]
 
+    default_sigma = kwargs.pop("default_sigma", 0.2)
+
     N_measurements = np.isfinite(measurements[column]).sum()
 
     if N_measurements == 0:
@@ -433,11 +444,11 @@ def _homogenise_spectrum_line_abundances(measurements, nodes=None, matrix=None,
     if nodes is None:
         nodes = measurements["node"]
 
-
     if matrix is None:
-        cov = np.eye(len(nodes)) * 0.2**2
+        cov = np.eye(len(nodes)) * (default_sigma * np.sqrt(len(nodes)))**2
     else:
         cov = np.cov(matrix)
+    cov = np.atleast_2d(cov)
 
     abundance = np.nan * np.ones(len(nodes))
     u_abundance = np.nan * np.ones(len(nodes))
@@ -447,8 +458,10 @@ def _homogenise_spectrum_line_abundances(measurements, nodes=None, matrix=None,
         abundance[i] = measurements[column][match][0]
         #u_abundance[i]  = measurements[e_column][match][0] # use NODE ABUNDANCE
         u_abundance[i] = (np.diag(cov)[i]**0.5)/np.sqrt(len(nodes))
-        if np.isfinite(measurements[e_column][match][0]):
-            u_abundance[i] = np.sqrt(u_abundance[i]**2 + measurements[e_column][match][0]**2)
+        if np.isfinite(measurements[e_column][match][0]) \
+        and measurements[e_column][match][0] > u_abundance[i]:
+            u_abundance[i] = measurements[e_column][match][0]
+
 
     mask = np.isfinite(abundance)
     abundance = abundance[mask]
@@ -460,7 +473,7 @@ def _homogenise_spectrum_line_abundances(measurements, nodes=None, matrix=None,
     if not np.all(np.isfinite(u_abundance)):
         logger.warn("Setting 0.2 dex uncertainty for {0} {1} line at {2}".format(
             None, None, measurements["wavelength"][0]))
-        u_abundance[:] = 0.2
+        u_abundance[:] = default_sigma
 
     N = mask.sum()
     N_nodes = len(nodes)
@@ -469,8 +482,9 @@ def _homogenise_spectrum_line_abundances(measurements, nodes=None, matrix=None,
 
     sigmas = np.tile(u_abundance, N).reshape(N, N)
     sigmas = np.multiply(sigmas, sigmas.T)
+
     if matrix is not None:
-        rho = np.corrcoef(matrix)
+        rho = np.atleast_2d(np.corrcoef(matrix))
         cov = np.multiply(rho[mask].reshape(N, N), sigmas)
     else:
         cov = sigmas
