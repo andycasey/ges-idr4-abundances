@@ -190,6 +190,10 @@ def parse_line_abundances(filename):
 
                 # Assume no scaling/homogenisation for any abundances.
                 row["scaled_abundance"] = row["abundance"]
+
+                if np.isfinite(row["abundance"]) and row["e_abundance"] > 1:
+                    row["flags"] = 100 # Spurious to begin with.
+
                 rows.append(row)
                 logger.debug(row)
 
@@ -220,7 +224,7 @@ if __name__ == "__main__":
 
     kwds = {
     #    "host": "/tmp/",
-        "dbname": "ges-idr4-wg11-differential-bias",
+        "dbname": "arc",
     #    "user": "arc",
     #    "password": os.environ.get('PSQL_PW', None)
     }
@@ -245,7 +249,6 @@ if __name__ == "__main__":
 
     cursor.execute("create index cname_species_index on line_abundances (cname, element, ion);")
     cursor.execute("create index wavelength_index on line_abundances (wavelength);")
-    #create index homogenised_cname_species_index on homogenised_line_abundances (cname, element, ion);
     cursor.close()
     connection.commit()
     

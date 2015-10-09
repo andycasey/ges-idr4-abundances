@@ -7,12 +7,22 @@ import psycopg2 as pg
 import plot
 from glob import glob
 
+import logging
+
+
+
+logging.basicConfig(level=logging.DEBUG,
+    format='%(asctime)-15s %(name)s %(levelname)s %(message)s')
+logger = logging.getLogger('ges')
+
+
 import matplotlib.pyplot as plt
 
 
 
 def make_figures(figures, database, element, ion, format="png"):
 
+    failed = []
     directory = "figures/{0}{1}".format(element.upper(), ion)
     if not os.path.exists(directory): os.mkdir(directory)
     for figure_name, details in figures.items():
@@ -25,7 +35,13 @@ def make_figures(figures, database, element, ion, format="png"):
         
 
         print("Doing {0} with {1}".format(figure_name, kwargs))
-        fig = command(database, element, ion, **kwargs)
+        try:
+            fig = command(database, element, ion, **kwargs)
+        except:
+            logger.exception("Something happened")
+            failed.append((command, element, ion))
+
+            continue
         if fig is not None:
         
             if isinstance(fig, dict):
@@ -53,6 +69,7 @@ def make_figures(figures, database, element, ion, format="png"):
     with open("{0}/all.html".format(directory), "w") as fp:
         fp.write(html)
 
+    return failed
 
 
 
@@ -65,7 +82,7 @@ if __name__ == "__main__":
 
     species = [
         #("Si", 2, (5, 10)), # Done
-        ("Si", 1, (5, 10)), # Done
+        #("Si", 1, (5, 10)), # Done
         ("Al", 1, (3, 7.5)),
         ("Al", 3, (3, 7.5)),
         ("Na", 1, (2.5, 7.5)),
@@ -122,26 +139,30 @@ if __name__ == "__main__":
         ("Eu", 2, None),
         ("Gd", 2, None),
         ("Sm", 2, None),
-    ]
+    ][::-1]
 
     database = pg.connect(dbname="arc")
 
 
     #make_figures(figures, database, "Si", 1)
-
+    failures = []
     for element, ion, absolute_extent in species:
 
         figures = OrderedDict([
-            ("compare-bm", (plot.compare_benchmarks,
+            ("compare-bm", (plot.compare_benchmarks # DONE
                 { "benchmarks_filename": "benchmarks.yaml" })),
-            ("compare-solar", plot.compare_solar),
-            ("compare-m67-1194", plot.compare_m67_twin),
-            ("benchmarks", (plot.benchmark_line_abundances, {
+            ("compare-solar", plot.compare_solar), #DONE
+            ("compare-m67-1194", plot.compare_m67_twin), #DONE
+            ("benchmarks", (plot.benchmark_line_abundances, { 
                 "benchmark_filename": "benchmarks.yaml" })),
             ("percentile", plot.percentiles),
-            ("differential-line-abundances", plot.differential_line_abundances),
-            ("differential-line-abundances-clipped", (
+            ("differential-line-abundances", plot.differential_line_abundances), # DONE
+            ("differential-line-abundances-clipped", ( # DONE
                 plot.differential_line_abundances, { "absolute_extent": absolute_extent })),
+            
+            #differential_line_abundances_wrt_x (YES)
+            #all_node_individual_line_abundance_differences (Maybe)
+
             ("line-abundances-logx-wrt-teff", (plot.line_abundances, {
                 "reference_column": "teff",
                 "abundance_format": "log_x",
@@ -236,10 +257,13 @@ if __name__ == "__main__":
 
         
         try:
-            make_figures(figures, database, element, ion)
+            failed = make_figures(figures, database, element, ion)
         except:
-            raise
+            logger.exception("FAIL SNAIL")
             None
+        else:
+            failures.extend(failed)
+
         plt.close("all")
 
         # TODO: Check that we didn't miss anything?

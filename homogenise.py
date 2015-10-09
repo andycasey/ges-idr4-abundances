@@ -441,8 +441,12 @@ def _homogenise_spectrum_line_abundances(measurements, nodes=None, matrix=None,
         return (np.nanmax(limits), np.nanstd(limits), sum(is_limit), True)
 
 
+    raise a
+
+    
     if nodes is None:
         nodes = measurements["node"]
+
 
     if matrix is None:
         cov = np.eye(len(nodes)) * (default_sigma * np.sqrt(len(nodes)))**2
@@ -461,6 +465,9 @@ def _homogenise_spectrum_line_abundances(measurements, nodes=None, matrix=None,
         if np.isfinite(measurements[e_column][match][0]) \
         and measurements[e_column][match][0] > u_abundance[i]:
             u_abundance[i] = measurements[e_column][match][0]
+
+
+
 
 
     mask = np.isfinite(abundance)

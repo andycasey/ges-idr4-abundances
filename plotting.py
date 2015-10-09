@@ -1184,204 +1184,29 @@ class AbundancePlotting(object):
         wavelengths = sorted(set(data["wavelength"]))
         N_nodes, N_lines = len(nodes), len(wavelengths)
 
-        # Calculate figure size
-        
-        xdim, scale = None, 1.
-        while xdim is None or xdim > 400:
+        # How many figures should we have?
+        axes_per_figure = kwargs.pop("axes_per_figure", 20)
+        if np.isfinite(axes_per_figure):
+            N_figures \
+                = int(np.ceil(float(N_lines) / axes_per_figure))
+        else:
+            N_figures, axes_per_figure = 1, N_lines
 
-            lb, tr = 0.5 * scale, 0.2 * scale
-            xscale, yscale = 4.0 * scale, 1.5 * scale
-            wspace, hspace = 0.05 * scale, 0.10 * scale
-            
-            xs = xscale * N_lines + xscale * (N_lines - 1) * wspace
-            ys = yscale * N_nodes + yscale * (N_nodes - 1) * hspace
-            x_aux = 0 if aux_column is None else 0.5 * xscale + 4 * wspace
+        figures = {}
+        for i in range(N_figures):
+            w = wavelengths[i*axes_per_figure:(i + 1)*axes_per_figure]
+            figures[str(i)] = _line_abundances(element, ion, reference_column,
+                data, homogenised_data, nodes, w, scatter_kwds=scatter_kwds,
+                homogenised_scatter_kwds=homogenised_scatter_kwds,
+                scaled=scaled, highlight_flagged=highlight_flagged,
+                show_homogenised=show_homogenised,
+                show_node_comparison=show_node_comparison,
+                show_line_comparison=show_line_comparison,
+                show_legend=show_legend, show_uncertainties=show_uncertainties,
+                abundance_format=abundance_format, **kwargs)
 
-            xdim = lb * xscale + xs + x_aux + tr * xscale
-            ydim = lb * yscale + ys + tr * yscale
+        return figures if N_figures > 1 else figures.values()[0]
 
-            # In case xdim > 400
-            scale -= 0.1
-
-        logger.debug("Requesting figure size: {0}, {1}".format(xdim, ydim))
-        fig, axes = plt.subplots(N_nodes, N_lines, figsize=(xdim, ydim))
-        fig.subplots_adjust(
-            left=(lb * xscale)/xdim,
-            bottom=(lb * yscale)/ydim,
-            right=(lb * xscale + xs + x_aux)/xdim,
-            top=(tr * yscale + ys)/ydim,
-            wspace=wspace, hspace=hspace)
-        axes = np.atleast_2d(axes)
-        if axes.shape[0] == 1: axes = axes.T
-
-        for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
-
-            match_wavelength = (data["wavelength"] == wavelength)
-            if show_homogenised:
-                match_homogenised_wavelength \
-                    = (homogenised_data["wavelength"] == wavelength)
-
-            assert len(node_axes) == len(nodes)
-            for j, (ax, node) in enumerate(zip(node_axes, nodes)):
-
-                # Labels and titles
-                if ax.is_last_row():
-                    ax.set_xlabel(reference_column)
-                if ax.is_first_col():
-                    ax.set_ylabel(node)               
-                if ax.is_first_row():
-                    ax.set_title(wavelength)
-
-                # Get all measurements for this line by this node.
-                if node == "Homogenised":
-                    ax_data = homogenised_data
-                    match = match_homogenised_wavelength
-                    
-                else:
-                    ax_data = data
-                    match = match_wavelength * (data["node"] == node)
-
-                x = ax_data[reference_column][match]
-                y = ax_data["abundance"][match]                 
-                if len(x) == 0:
-                    continue
-
-                if abundance_format == "x_h":
-                    y -= utils.solar_abundance(element)
-                elif abundance_format == "x_fe":
-                    y -= utils.solar_abundance(element) \
-                        + ax_data["feh"][match].astype(float)
-
-                if node == "Homogenised":
-                    kwds = homogenised_scatter_kwds.copy()
-                    if aux_column is not None:
-                        kwds["c"] = ax_data[aux_column][match]
-
-                    scat = ax.scatter(x, y, **kwds)
-                else:
-                    kwds = scatter_kwds.copy()
-                        
-                    if highlight_flagged:
-                        flagged = ax_data["flags"][match] > 0
-                        if not all(flagged):
-                            if aux_column is not None:
-                                kwds["c"] = ax_data[aux_column][match][~flagged]
-                            scat = ax.scatter(x[~flagged], y[~flagged], **kwds)
-
-                        if any(flagged):
-                            if aux_column is not None:
-                                kwds["c"] = ax_data[aux_column][match][flagged]
-                            kwds["edgecolor"] = "r"
-                            kwds["lw"] = 2
-                            ax.scatter(x[flagged], y[flagged], **kwds)
-
-                    else:
-                        scat = ax.scatter(x, y, **kwds)
-
-                if show_uncertainties:
-                    raise NotImplementedError("sorry, no time")
-
-        comparison_scatter_kwds = {
-            "s": 25,
-            "c": "#EEEEEE",
-            "zorder": -1,
-            "marker": "v",
-            "alpha": 0.5,
-            "edgecolor": "#BBBBBB"
-        }
-        # We don't need the homogenised node to see comparisons, so let's remove
-        # it from the rest.
-        if show_homogenised: nodes.remove("Homogenised")
-
-        # Show all other measurements for this line (from all nodes).
-        if show_line_comparison: 
-            for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
-                match = (data["wavelength"] == wavelength)
-                x = data[reference_column][match]
-                y = data["abundance"][match]
-                if abundance_format == "x_h":
-                    y -= utils.solar_abundance(element)
-                elif abundance_format == "x_fe":
-                    y -= utils.solar_abundance(element) \
-                        + data["feh"][match].astype(float)
-
-                if len(x) == 0: continue
-
-                for j, ax in enumerate(node_axes):
-                    ax.scatter(x, y, label="Common line", 
-                        **comparison_scatter_kwds)
-
-        comparison_scatter_kwds["marker"] = "s"
-        if show_node_comparison:
-            for i, (line_axes, node) in enumerate(zip(axes, nodes)):
-                match = (data["node"] == node)
-                x = data[reference_column][match]
-                y = data["abundance"][match]
-                if abundance_format == "x_h":
-                    y -= utils.solar_abundance(element)
-                elif abundance_format == "x_fe":
-                    y -= utils.solar_abundance(element) \
-                        + data["feh"][match].astype(float)
-
-                if len(x) == 0: continue
-
-                for j, ax in enumerate(line_axes):
-                    ax.scatter(x, y, label="Common node", 
-                        **comparison_scatter_kwds)
-
-        if show_node_comparison and show_line_comparison and show_legend:
-            axes.T[0][0].legend(loc="upper left", frameon=True, fontsize=12)
-
-        # Common x- and y-axis limits.
-        x_limits = [+np.inf, -np.inf]
-        y_limits = [+np.inf, -np.inf]
-        for ax in axes.flatten():
-            if sum([_.get_offsets().size for _ in ax.collections]) == 0:
-                continue
-
-            proposed_x_limits = ax.get_xlim()
-            proposed_y_limits = ax.get_ylim()
-
-            if proposed_x_limits[0] < x_limits[0]:
-                x_limits[0] = proposed_x_limits[0]
-            if proposed_y_limits[0] < y_limits[0]:
-                y_limits[0] = proposed_y_limits[0]
-            if proposed_x_limits[1] > x_limits[1]:
-                x_limits[1] = proposed_x_limits[1]
-            if proposed_y_limits[1] > y_limits[1]:
-                y_limits[1] = proposed_y_limits[1]
-
-        y_limits = y_extent or y_limits
-        x_limits = x_extent or x_limits
-        for ax in axes.flatten():
-            ax.set_xlim(x_limits)
-            ax.set_ylim(y_limits)
-            ax.xaxis.set_major_locator(MaxNLocator(5))
-            ax.yaxis.set_major_locator(MaxNLocator(5))
-
-            if not ax.is_last_row(): ax.set_xticklabels([])
-            if not ax.is_first_col(): ax.set_yticklabels([])
-
-        if aux_column is not None:
-            cbar = plt.colorbar(scat, ax=list(axes.flatten()))
-            cbar.set_label(aux_column)
-            _ = axes.T[-1][0].get_position().bounds
-            cbar.ax.set_position([
-                (lb*xscale + xs + 4*wspace)/xdim, 
-                axes.T[-1][-1].get_position().bounds[1],
-                (lb*xscale + xs + x_aux)/xdim,
-                axes.T[-1][0].get_position().y1 - \
-                    axes.T[-1][-1].get_position().y0
-                ])
-
-            fig.subplots_adjust(
-                left=(lb * xscale)/xdim,
-                bottom=(lb * yscale)/ydim,
-                right=(lb * xscale + xs)/xdim,
-                top=(tr * yscale + ys)/ydim,
-                wspace=wspace, hspace=hspace)
-
-        return fig
 
 
     def differential_line_abundances_wrt_parameter(self, element, ion, parameter,
@@ -1887,15 +1712,253 @@ def _corner_scatter(data, labels=None, uncertainties=None, extent=None,
     return fig
 
 
+def _line_abundances(element, ion, reference_column, 
+    data, homogenised_data, nodes, wavelengths,  
+    scatter_kwds=None, homogenised_scatter_kwds=None, scaled=False,
+    highlight_flagged=True, show_homogenised=True, aux_column=None,
+    x_extent=None, y_extent=None, show_node_comparison=True,
+    show_line_comparison=True, show_legend=False, show_uncertainties=False,
+    abundance_format="log_x", **kwargs):
+
+    # Calculate figure size
+    N_nodes, N_lines = len(nodes), len(wavelengths)
+    xdim, scale = None, 1.
+    while xdim is None or xdim > 400:
+
+        lb, tr = 0.5 * scale, 0.2 * scale
+        xscale, yscale = 4.0 * scale, 1.5 * scale
+        wspace, hspace = 0.05 * scale, 0.10 * scale
+        
+        xs = xscale * N_lines + xscale * (N_lines - 1) * wspace
+        ys = yscale * N_nodes + yscale * (N_nodes - 1) * hspace
+        x_aux = 0 if aux_column is None else 0.5 * xscale + 4 * wspace
+
+        xdim = lb * xscale + xs + x_aux + tr * xscale
+        ydim = lb * yscale + ys + tr * yscale
+
+        # In case xdim > 400
+        scale -= 0.1
+
+    logger.debug("Requesting figure size: {0}, {1}".format(xdim, ydim))
+    fig, axes = plt.subplots(N_nodes, N_lines, figsize=(xdim, ydim))
+    fig.subplots_adjust(
+        left=(lb * xscale)/xdim,
+        bottom=(lb * yscale)/ydim,
+        right=(lb * xscale + xs + x_aux)/xdim,
+        top=(tr * yscale + ys)/ydim,
+        wspace=wspace, hspace=hspace)
+    axes = np.atleast_2d(axes)
+    if axes.shape[0] == 1: axes = axes.T
+
+    for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
+
+        match_wavelength = (data["wavelength"] == wavelength)
+        if show_homogenised:
+            match_homogenised_wavelength \
+                = (homogenised_data["wavelength"] == wavelength)
+
+        assert len(node_axes) == len(nodes)
+        for j, (ax, node) in enumerate(zip(node_axes, nodes)):
+
+            # Labels and titles
+            if ax.is_last_row():
+                ax.set_xlabel(reference_column)
+            if ax.is_first_col():
+                ax.set_ylabel(node)               
+            if ax.is_first_row():
+                ax.set_title(wavelength)
+
+            # Get all measurements for this line by this node.
+            if node == "Homogenised":
+                ax_data = homogenised_data
+                match = match_homogenised_wavelength
+                
+            else:
+                ax_data = data
+                match = match_wavelength * (data["node"] == node)
+
+            x = ax_data[reference_column][match]
+            y = ax_data["abundance"][match]                 
+            if len(x) == 0:
+                continue
+
+            if abundance_format == "x_h":
+                y -= utils.solar_abundance(element)
+            elif abundance_format == "x_fe":
+                y -= utils.solar_abundance(element) \
+                    + ax_data["feh"][match].astype(float)
+
+            if node == "Homogenised":
+                kwds = homogenised_scatter_kwds.copy()
+                if aux_column is not None:
+                    kwds["c"] = ax_data[aux_column][match]
+
+                scat = ax.scatter(x, y, **kwds)
+            else:
+                kwds = scatter_kwds.copy()
+                    
+                if highlight_flagged:
+                    flagged = ax_data["flags"][match] > 0
+                    if not all(flagged):
+                        if aux_column is not None:
+                            kwds["c"] = ax_data[aux_column][match][~flagged]
+                        scat = ax.scatter(x[~flagged], y[~flagged], **kwds)
+
+                    if any(flagged):
+                        if aux_column is not None:
+                            kwds["c"] = ax_data[aux_column][match][flagged]
+                        kwds["edgecolor"] = "r"
+                        kwds["lw"] = 2
+                        ax.scatter(x[flagged], y[flagged], **kwds)
+
+                else:
+                    scat = ax.scatter(x, y, **kwds)
+
+            if show_uncertainties:
+                raise NotImplementedError("sorry, no time")
+
+    comparison_scatter_kwds = {
+        "s": 25,
+        "c": "#EEEEEE",
+        "zorder": -1,
+        "marker": "v",
+        "alpha": 0.5,
+        "edgecolor": "#BBBBBB"
+    }
+    # We don't need the homogenised node to see comparisons, so let's remove
+    # it from the rest.
+    if show_homogenised: nodes.remove("Homogenised")
+
+    # Show all other measurements for this line (from all nodes).
+    if show_line_comparison: 
+        for i, (node_axes, wavelength) in enumerate(zip(axes.T, wavelengths)):
+            match = (data["wavelength"] == wavelength)
+            x = data[reference_column][match]
+            y = data["abundance"][match]
+            if abundance_format == "x_h":
+                y -= utils.solar_abundance(element)
+            elif abundance_format == "x_fe":
+                y -= utils.solar_abundance(element) \
+                    + data["feh"][match].astype(float)
+
+            if len(x) == 0: continue
+
+            for j, ax in enumerate(node_axes):
+                ax.scatter(x, y, label="Common line", 
+                    **comparison_scatter_kwds)
+
+    comparison_scatter_kwds["marker"] = "s"
+    if show_node_comparison:
+        for i, (line_axes, node) in enumerate(zip(axes, nodes)):
+            match = (data["node"] == node)
+            x = data[reference_column][match]
+            y = data["abundance"][match]
+            if abundance_format == "x_h":
+                y -= utils.solar_abundance(element)
+            elif abundance_format == "x_fe":
+                y -= utils.solar_abundance(element) \
+                    + data["feh"][match].astype(float)
+
+            if len(x) == 0: continue
+
+            for j, ax in enumerate(line_axes):
+                ax.scatter(x, y, label="Common node", 
+                    **comparison_scatter_kwds)
+
+    if show_node_comparison and show_line_comparison and show_legend:
+        axes.T[0][0].legend(loc="upper left", frameon=True, fontsize=12)
+
+    # Common x- and y-axis limits.
+    x_limits = [+np.inf, -np.inf]
+    y_limits = [+np.inf, -np.inf]
+    for ax in axes.flatten():
+        if sum([_.get_offsets().size for _ in ax.collections]) == 0:
+            continue
+
+        proposed_x_limits = ax.get_xlim()
+        proposed_y_limits = ax.get_ylim()
+
+        if proposed_x_limits[0] < x_limits[0]:
+            x_limits[0] = proposed_x_limits[0]
+        if proposed_y_limits[0] < y_limits[0]:
+            y_limits[0] = proposed_y_limits[0]
+        if proposed_x_limits[1] > x_limits[1]:
+            x_limits[1] = proposed_x_limits[1]
+        if proposed_y_limits[1] > y_limits[1]:
+            y_limits[1] = proposed_y_limits[1]
+
+    y_limits = y_extent or y_limits
+    x_limits = x_extent or x_limits
+    for ax in axes.flatten():
+        ax.set_xlim(x_limits)
+        ax.set_ylim(y_limits)
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+
+        if not ax.is_last_row(): ax.set_xticklabels([])
+        if not ax.is_first_col(): ax.set_yticklabels([])
+
+    if aux_column is not None:
+        cbar = plt.colorbar(scat, ax=list(axes.flatten()))
+        cbar.set_label(aux_column)
+        _ = axes.T[-1][0].get_position().bounds
+        cbar.ax.set_position([
+            (lb*xscale + xs + 4*wspace)/xdim, 
+            axes.T[-1][-1].get_position().bounds[1],
+            (lb*xscale + xs + x_aux)/xdim,
+            axes.T[-1][0].get_position().y1 - \
+                axes.T[-1][-1].get_position().y0
+            ])
+
+        fig.subplots_adjust(
+            left=(lb * xscale)/xdim,
+            bottom=(lb * yscale)/ydim,
+            right=(lb * xscale + xs)/xdim,
+            top=(tr * yscale + ys)/ydim,
+            wspace=wspace, hspace=hspace)
+
+    return fig
+
+
 def _compare_repeat_spectra(measurements, colors, homogenised_measurements=None,
     scaled=False, abundance_extent=None, bins=20, highlight_flagged=True,
     show_legend=True, x_column="SNR", reference_abundance=None, 
-    reference_uncertainty=None, reference_label=None):
+    reference_uncertainty=None, reference_label=None, **kwargs):
 
     nodes = sorted(set(measurements["node"]))
     wavelengths = sorted(set(measurements["wavelength"]))
-    N_nodes, N_wavelengths = len(nodes), len(wavelengths)
+    N_wavelengths = len(wavelengths)
 
+    axes_per_figure = kwargs.pop("axes_per_figure", 50)
+    if np.isfinite(axes_per_figure):
+        N_figures = int(np.ceil(float(N_wavelengths) / axes_per_figure))
+        logger.info("Producing {0} figures with {1} wavelengths per figure"\
+            .format(N_figures, axes_per_figure))
+
+    else:
+        N_figures, axes_per_figure = 1, N_wavelengths
+
+    figures = {}
+    for i in range(N_figures):
+        figures[str(i)] = __compare_repeat_spectra(measurements, colors,
+            wavelengths[i*axes_per_figure:(i + 1)*axes_per_figure], nodes,
+            homogenised_measurements=homogenised_measurements, scaled=scaled,
+            abundance_extent=abundance_extent, bins=bins,
+            highlight_flagged=highlight_flagged, show_legend=show_legend,
+            x_column=x_column, reference_abundance=reference_abundance,
+            reference_uncertainty=reference_uncertainty,
+            reference_label=reference_label, **kwargs)
+
+    return figures if N_figures > 1 else figures.values()[0]
+
+
+def __compare_repeat_spectra(measurements, colors, wavelengths, nodes,
+    homogenised_measurements=None, scaled=False, abundance_extent=None, bins=20,
+    highlight_flagged=True, show_legend=True, x_column="SNR",
+    reference_abundance=None, reference_uncertainty=None, reference_label=None,
+    **kwargs):
+
+    N_nodes, N_wavelengths = len(nodes), len(wavelengths)
     column = "scaled_abundance" if scaled else "abundance"
     if not np.any(np.isfinite(measurements[column])): return None
 
