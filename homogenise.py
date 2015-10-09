@@ -342,8 +342,6 @@ class AbundanceHomogenisation(object):
                     group["cname"][0], group["spectrum_filename_stub"][0],
                     mu, sigma, max(group["num_measurements"]), N_lines, False)
 
-                raise a
-
         # TODO: should we average the abundances from multiple spectra?
         return None
 
