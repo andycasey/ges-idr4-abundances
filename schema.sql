@@ -434,7 +434,7 @@ CREATE TABLE node_results(
     nn_dy2 integer,
     enn_dy2 real,
     nl_dy2 integer,
-    spt char(1),
+    spt char(8),
     veil real,
     e_veil real,
     ew_li real,

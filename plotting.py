@@ -1014,7 +1014,7 @@ class AbundancePlotting(object):
         for i, node in enumerate(nodes):
             data = self.release.retrieve_table("""SELECT {0}, e_{0}
                 FROM node_results WHERE node = %s ORDER BY ra DESC, dec DESC,
-                cname DESC""".format(column), (node, ))
+                cname, filename, setup DESC""".format(column), (node, ))
 
             if data is None:
                 logger.warn("No node results found for node {0}".format(node))

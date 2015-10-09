@@ -57,7 +57,7 @@ class DataRelease(object):
             return self._nodes
         except AttributeError:
             self._nodes = tuple(self.retrieve_column("""SELECT DISTINCT ON(node)
-                node FROM line_abundances ORDER BY node ASC""", asarray=True))
+                node FROM node_results ORDER BY node ASC""", asarray=True))
             return self._nodes
 
 

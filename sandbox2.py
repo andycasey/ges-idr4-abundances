@@ -33,7 +33,6 @@ def make_figures(figures, element, ion, format="png", remake=True):
 
     failed = []
     directory = "figures/{0}/{1}{2}".format(wg, element.upper(), ion)
-    if not os.path.exists(directory): os.mkdir(directory)
     for figure_name, details in figures.items():
         
         if not isinstance(details, (tuple, )):
@@ -52,7 +51,8 @@ def make_figures(figures, element, ion, format="png", remake=True):
             continue
     
 
-        print("Doing {0} with {1}".format(figure_name, kwargs))
+        print("Doing {0} on {1} {2} with {3}".format(figure_name, element, ion,
+            kwargs))
         try:
             fig = command(element, ion, **kwargs)
         except:
@@ -62,6 +62,7 @@ def make_figures(figures, element, ion, format="png", remake=True):
             continue
 
         if fig is not None:
+            if not os.path.exists(directory): os.mkdir(directory)
         
             if isinstance(fig, dict):
                 for suffix, figure in fig.items():
@@ -80,6 +81,7 @@ def make_figures(figures, element, ion, format="png", remake=True):
 
             plt.close("all")
 
+    if not os.path.exists(directory): return
 
     # Create an all.html
     filenames = glob("{0}/*.{1}".format(directory, format))
@@ -164,7 +166,7 @@ for element, ion, absolute_extent in species:
     
 
     figures = OrderedDict([
-        ("mean-abundances", (ges.plot.mean_abundances, {
+        ("mean-abundances", (ges.plot.mean_abundances, {}))
     ])
 
     try:
