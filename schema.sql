@@ -1,19 +1,3 @@
-DROP TABLE IF EXISTS homogenised_line_abundances;
-CREATE TABLE homogenised_line_abundances (
-    cname char(16) not null,
-    spectrum_filename_stub char (140) not null,
-    wavelength real not null,
-    element char(2) not null,
-    ion integer not null,
-    abundance real,
-    e_abundance real,
-    upper_abundance int default 0,
-    num_measurements int default 0,
-    node_bitmask int default 0
-    );
-ALTER TABLE homogenised_line_abundances 
-    ADD COLUMN id BIGSERIAL PRIMARY KEY;
-
 
 DROP TABLE IF EXISTS homogenised_abundances;
 CREATE TABLE homogenised_abundances (
@@ -36,46 +20,15 @@ CREATE TABLE line_abundance_flags(
 ALTER TABLE line_abundance_flags ADD COLUMN id BIGSERIAL PRIMARY KEY;
 
 
-CREATE TABLE line_abundances(
-    node char(10) not null,
-    wavelength real not null,
-    element char(2) not null,
-    ion integer not null,
-    loggf real default 'NaN',
-    chi real default 'NaN',
-    ges_flag1 char(1),
-    ges_flag2 char(1),
-    bm_fg_dwarf_flag char(1),
-    bm_k_dwarf_flag char(1),
-    bm_mp_flag char(1),
-    bm_fgk_giant char(1), 
-    bm_m_giant char(1),
-    ew real,
-    e_ew real,
-    upper_ew int, 
-    abundance real,
-    e_abundance real,
-    upper_abundance int,
-    measurement_type char(2) not null,
-    cname char(16) not null,
-    code char(40) not null,
-    object char(21) not null,
-    abundance_filename char(140) not null,
-    spectrum_filename_stub char(140) not null,
-    scaled_abundance real default 'NaN',
-    flags int default 0
-    );
-ALTER TABLE line_abundances ADD COLUMN id BIGSERIAL PRIMARY KEY;
-
-
+DROP TABLE IF EXISTS node_results;
 CREATE TABLE node_results(
     node char(10) not null,
     cname char(16) not null,
-    ges_fld char(23) not null,
+    ges_fld char(12) not null,
     object char(21) not null,
     filename char(69) not null,
     ges_type char(8) not null,
-    setup char(4) not null,
+    setup char(9) not null,
     wg char(4) not null,
     ra real not null,
     dec real not null,
