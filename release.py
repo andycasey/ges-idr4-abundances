@@ -157,50 +157,28 @@ class DataRelease(object):
         return (X, nodes, data)
 
 
-    def _match_species_abundances_old(self, element, ion, additional_columns=None,
-        scaled=False, include_flagged_lines=False):
-        """
-        Return an array of matched line abundances for the given species.
-        """
+    def _match_homogenised_line_abundances(self, element, ion,
+        ignore_gaps=False, include_limits=False):
 
-        column = "scaled_abundance" if scaled else "abundance"
+        tol = self.config.wavelength_tolerance
+        measurements = self.retrieve_table(
+            """SELECT wavelength, abundance, cname, spectrum_filename_stub
+            FROM homogenised_line_abundances
+            WHERE trim(element) = %s AND ion = %s AND abundance <> 'NaN'""",
+            (element, ion))
+        if measurements is None: return (None, None)
 
-        flag_query = "" if include_flagged_lines else "AND flags = 0"
-        if additional_columns is None:
-            data = self.retrieve_table("""SELECT node, wavelength,
-                spectrum_filename_stub, abundance, scaled_abundance 
-                FROM line_abundances WHERE trim(element) = %s AND ion = %s
-                {flag_query} ORDER BY node ASC""".format(flag_query=flag_query),
-                (element, ion))
+        wavelengths = sorted(set(measurements["wavelength"]))
+        measurements = measurements.group_by(["cname", "spectrum_filename_stub"])
+        X = np.nan * np.ones((len(wavelengths), len(measurements.groups)))
+        for j, group in enumerate(measurements.groups):
+            for row in group:
+                X[wavelengths.index(row["wavelength"]), j] = row["abundance"]
 
-        else:
-            data = self.retrieve_table("""SELECT * FROM line_abundances l
-                JOIN (SELECT DISTINCT ON (cname) cname, {additional_columns} 
-                    FROM node_results ORDER BY cname) n 
-                ON (trim(l.element) = %s AND l.ion = %s
-                    AND l.cname = n.cname {flag_query})""".format(
-                additional_columns=", ".join(additional_columns),
-                flag_query=flag_query), (element, ion))
+        row_valid = np.all if ignore_gaps else np.any
+        X = X[:, row_valid(np.isfinite(X), axis=0)]
+        return (np.ma.array(X, mask=~np.isfinite(X)), wavelengths)
 
-        if data is None: return (None, None, None)
-
-        nodes = sorted(set(data["node"]))
-        wavelengths = sorted(set(data["wavelength"]))
-
-        data = data.group_by(["wavelength", "spectrum_filename_stub"])
-        assert len(nodes) >= np.diff(data.groups.indices).max()
-
-        N_nodes, N_groups = len(nodes), len(data.groups)
-        X = np.nan * np.ones((N_groups, N_nodes))
-        for i, group in enumerate(data.groups):
-            logger.debug("matching group {0}/{1}".format(i, N_groups))
-            for entry in group:
-                j = nodes.index(entry["node"])
-                X[i, j] = entry[column]
-
-        # Return any other data.
-        data = data[data.groups.indices[:-1]]
-        return (X, nodes, data)
 
 
     def _match_line_abundances(self, element, ion, wavelength, column,
