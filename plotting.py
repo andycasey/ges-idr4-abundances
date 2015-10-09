@@ -388,12 +388,15 @@ class AbundancePlotting(object):
                     X_diff_wavelength[:, k].flatten() \
                     for k, idx in enumerate(indices) if j in idx])
                 
-                if np.any(np.isfinite(X_diff_wavelength_node)) and \
-                    np.any((X_diff_wavelength_node > bin_min) * \
-                    (bin_max > X_diff_wavelength_node)):
-                    ax.hist(X_diff_wavelength_node, color=colors[node],
-                        **hist_kwds)
-                
+                try:
+                    ax.hist(
+                        X_diff_wavelength_node[np.isfinite(X_diff_wavelength_node)],
+                        color=colors[node], **hist_kwds)
+                except:
+                    logger.exception("Could not plot differential distribution"\
+                        " for {0}".format(node))
+                    None
+
                 ax.text(0.95, 0.95, latexify("{0}{1}".format("\n"*(j + 1), 
                         np.isfinite(X_diff_wavelength_node).sum())),
                     transform=ax.transAxes, verticalalignment="top",
