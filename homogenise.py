@@ -50,17 +50,10 @@ class AbundanceHomogenisation(object):
         self.release.commit()
 
         # Get the unique wavelengths.
-        wavelengths = self.release.retrieve_column(
+        wavelengths = sorted(set(self.release.retrieve_table(
             """SELECT DISTINCT ON (wavelength) wavelength FROM line_abundances
             WHERE TRIM(element) = %s AND ion = %s AND flags = 0
-            ORDER BY wavelength ASC""", (element, ion), asarray=True)
-
-        # Clean up the wavelengths a little, since retrieve_column does not do
-        # this for us automagically.
-        if self.release.config.round_wavelengths >= 0:
-            wavelengths = \
-                np.round(wavelengths, self.release.config.round_wavelengths)
-        wavelengths = sorted(set(wavelengths))
+            ORDER BY wavelength ASC""", (element, ion))["wavelength"]))
 
         # Get the unique CNAMEs. We deal with repeat spectra (of the same CNAME)
         # later on in the code.
@@ -99,8 +92,47 @@ class AbundanceHomogenisation(object):
                 Y[(Y_table["wavelength"] == wavelength)])
 
             line_variance = np.nanvar(np.abs(Z))
-            
-            # For future andy:
+
+            if not np.isfinite(line_variance):
+                # If the line variance is not finite, it means we do not have
+                # differential abundances for this line. This is typically
+                # because there were not enough nodes measuring this wavelength.
+
+                # But we do know where this line sits with respect to the mean
+                # abundance for this element. So we can still estimate the line
+                # variance.
+                assert Y.shape[1] > 1
+
+                 # For each measured wavelength, what is the mean abundance for
+                # the corresponding star, and what is the variance in that
+                # distribution?
+                matchers = []
+                wl_mask = (Y_table["wavelength"] == wavelength)
+
+                for stub in Y_table["spectrum_filename_stub"][wl_mask]:
+                    stub_mask = (Y_table["spectrum_filename_stub"] == stub)
+                    
+                    value = Y[stub_mask*wl_mask].flatten()
+                    node_mask = np.isfinite(value)
+                    value = value[node_mask]
+
+                    matchers.extend(Y[stub_mask * ~wl_mask, node_mask] - value)
+
+                line_variance = np.nanvar(np.abs(matchers))
+
+                assert line_variance > 0
+
+                if line_variance == 0:
+                    # This line was only measured by one node in some stars, and
+                    # in those stars there are no other measurements of this
+                    # element, so we have no basis for the variance in this line
+                    # This is a fringe case, and we will just have to do 
+                    # something reasonable:
+                    line_variance = kwargs.get("default_variance", 0.1**2)
+                    logger.warn("Using default variance of {0:.2f} for {1} {2}"\
+                        " line at {3}".format(line_variance, element, ion, 
+                            wavelength))
+
             assert np.isfinite(line_variance) and line_variance > 0
 
             # For each CNAME / FILENAME, homogenise this line.
@@ -220,6 +252,7 @@ class AbundanceHomogenisation(object):
                 AND cname = %s AND flags = 0 AND abundance <> 'NaN'
                 AND wavelength = %s ORDER BY node ASC""",
                 (element, ion, cname, wavelength))
+
         if measurements is None:
             logger.warn("No valid {0} {1} measurements at {2} for CNAME = {3}"\
                 .format(element, ion, wavelength, cname))
@@ -317,13 +350,13 @@ class AbundanceHomogenisation(object):
                 # Calculate the optimal weights that will produce the lowest
                 # variance. TODO There is an analytic solution to this...
                 def min_variance(weights):
-                    if np.any(weights < 0):
-                        return np.inf
-
                     # All weights must sum to one.
                     weights = weights.copy()
                     final_value = 1. - np.sum(weights)
                     weights = np.append(weights, final_value)
+                    if np.any(weights < 0):
+                        return np.inf
+
                     return unbiased_variance(weights, cov)
 
                 w = op.fmin(min_variance, (np.ones(N_lines)/N_lines)[:-1],
@@ -526,7 +559,23 @@ def _homogenise_spectrum_line_abundances(measurements, line_variance, rho=None,
     # We're deep here. Mark your assumptions!
     assert N_nodes > 0
     # One measurement per node.
-    assert len(set(measurements["node"])) == N_nodes
+    if len(set(measurements["node"])) != N_nodes:
+        logger.warn("The number of unique nodes ({0}) does not match the "\
+            "expected number ({1}): {2}".format(len(set(measurements["node"])),
+                N_nodes, ", ".join(set(measurements["node"]))))
+
+        # Ignore the other ones.
+        ok = np.ones(len(measurements), dtype=bool)
+        done = []
+        for i, node in enumerate(measurements["node"]):
+            if node in done: ok[i] = False
+            else:
+                done.append(node)
+        logger.debug("Ignoring {0} rows".format(len(measurements) - ok.sum()))
+
+        measurements = measurements[ok]
+        N_nodes = len(set(measurements["node"]))
+
     assert np.isfinite(line_variance)
 
     # If we have measurements and upper limits, we will be conservative and
@@ -542,18 +591,25 @@ def _homogenise_spectrum_line_abundances(measurements, line_variance, rho=None,
 
     # Build the covariance matrix.
     cov = np.ones((N_nodes, N_nodes))
-    for i, node_i in enumerate(measurements["node"]):
-        for j, node_j in enumerate(measurements["node"]):
-            if i == j: continue
-            i_index = rho_nodes.index(node_i)
-            j_index = rho_nodes.index(node_j)
-            cov[i, j] *= rho[i_index, j_index]
+    if np.all(np.isfinite(rho)):
+        for i, node_i in enumerate(measurements["node"]):
+            for j, node_j in enumerate(measurements["node"]):
+                if i != j:
+                    i_index = rho_nodes.index(node_i)
+                    j_index = rho_nodes.index(node_j)
+                    cov[i, j] *= rho[i_index, j_index]
+
+    else:
+        logger.warn("Non-finite correlation coefficients for {0} {1} line at "\
+            "{2:.0f} -- ignoring covariance between {3} nodes".format(
+                measurements["element"][0], measurements["ion"][0],
+                measurements["wavelength"][0], N_nodes))
 
     # Check that no node uncertainties are larger than the line variance
     # given to us. If they are, use that.
-    variances = np.array([
+    variances = np.atleast_2d(np.array([
         [line_variance] * N_nodes,
-        measurements["e_abundance"]**2])
+        measurements["e_abundance"].astype(float)**2]))
     sigmas = np.sqrt(np.nanmax(variances, axis=0))
 
     # Build the covariance matrix.
@@ -566,13 +622,14 @@ def _homogenise_spectrum_line_abundances(measurements, line_variance, rho=None,
     # Calculate the optimal weights that will produce the lowest variance.
     # TODO There is an analytic solution to this...
     def min_variance(weights):
-        if np.any(weights < 0):
-            return np.inf
-
         # All weights must sum to one.
         weights = weights.copy()
         final_value = 1. - np.sum(weights)
         weights = np.append(weights, final_value)
+
+        if np.any(weights < 0):
+            return np.inf
+
         return unbiased_variance(weights, cov)
 
     w = op.fmin(min_variance, (np.ones(N_nodes)/N_nodes)[:-1], disp=False)

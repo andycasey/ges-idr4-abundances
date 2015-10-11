@@ -48,7 +48,7 @@ class DataRelease(object):
         Config = namedtuple('Configuration', 
             'wavelength_tolerance, round_wavelengths')
 
-        self.config = Config(wavelength_tolerance=0.1, round_wavelengths=1)
+        self.config = Config(wavelength_tolerance=0.5, round_wavelengths=0)
 
 
     @property
@@ -95,7 +95,8 @@ class DataRelease(object):
         if additional_columns is None:
             query += """CREATE TABLE {tbl} AS (SELECT DISTINCT ON
                 (round(wavelength::numeric, {rounding}), spectrum_filename_stub)
-                round(wavelength::numeric, {rounding}) AS wavelength,
+                wavelength,
+                round(wavelength::numeric, {rounding}) AS rounded_wavelength,
                 spectrum_filename_stub
                 FROM line_abundances l
                 WHERE TRIM(l.element) = %s AND l.ion = %s {flag_query})"""
@@ -103,7 +104,8 @@ class DataRelease(object):
             additional_columns = ", ".join(set(additional_columns))
             query += """CREATE TABLE {tbl} AS (SELECT DISTINCT ON 
                 (round(wavelength::numeric, {rounding}), spectrum_filename_stub)
-                round(wavelength::numeric, {rounding}) AS wavelength,
+                wavelength,
+                round(wavelength::numeric, {rounding}) AS rounded_wavelength,
                 spectrum_filename_stub, n.*
                 FROM line_abundances l
                 JOIN (SELECT DISTINCT ON (cname) cname, {additional_columns} 
@@ -116,20 +118,20 @@ class DataRelease(object):
             (element, ion))
         # Create an index.
         self.execute("""CREATE INDEX {0}_index ON {0} 
-            (wavelength, spectrum_filename_stub)""".format(tmp_name))
+            (rounded_wavelength, spectrum_filename_stub)""".format(tmp_name))
         self._database.commit()
 
         N_nodes = len(nodes)
         
         # Do a left outer join against the table.
-        query = """SELECT DISTINCT ON (T.wavelength, T.spectrum_filename_stub)
+        query = """SELECT DISTINCT ON (T.rounded_wavelength, T.spectrum_filename_stub)
             T2.{5} {6}
             FROM {0} T LEFT OUTER JOIN line_abundances T2 ON (
                 T.spectrum_filename_stub = T2.spectrum_filename_stub AND
-                T.wavelength = round(T2.wavelength::numeric, {1}) AND
+                T.rounded_wavelength = round(T2.wavelength::numeric, {1}) AND
                 TRIM(T2.element) = '{2}' AND T2.ion = {3} AND 
                 T2.node = '{4}') 
-            ORDER BY T.spectrum_filename_stub, T.wavelength ASC"""
+            ORDER BY T.spectrum_filename_stub, T.rounded_wavelength ASC"""
 
         data = self.retrieve_table(query.format(
             tmp_name, rounding, element, ion, nodes[0], column, ", T.*"),
@@ -141,6 +143,10 @@ class DataRelease(object):
             return (None, None, None)
 
         data["wavelength"] = data["wavelength"].astype(float)
+        if self.config.round_wavelengths >= 0:
+            data["wavelength"] = np.round(data["wavelength"],
+                self.config.round_wavelengths)
+
         X = np.nan * np.ones((len(data), N_nodes))
         X[:, 0] = data[column].astype(float)
         del data[column]
@@ -380,7 +386,7 @@ class DataRelease(object):
 
 
     def export_fits(self, template_filename, output_filename, extension=1,
-        rounding=2, clobber=False):
+        rounding=2, clobber=False, verify=False):
         """
         Export the homogenised stellar abundances to FITS format using the
         node template filename provided.
@@ -566,7 +572,13 @@ class DataRelease(object):
                         any_results, any_valid_results))
 
                 if any_valid_results > 0:
-                    raise MissingResultsError
+                    # That means there are abundances which were not properly
+                    # homogenised.
+                    if verify:
+                        raise MissingResultsError
+
+                    logger.warn("Missing {0} results for {1} / {2}".format(
+                        any_valid_results, cname, spectrum_filename_stub))
 
         # Update from updaters
         for column, values in updates.items():
