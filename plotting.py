@@ -168,6 +168,148 @@ class AbundancePlotting(object):
             reference_uncertainty=None, reference_label="Solar", **kwargs)
 
 
+    def differential_mean_abundances_per_setup(self, element, ion, 
+        reference_setup, reference_column, setup=None, bins=20, x_extent=None,
+        y_extent=(-0.5, 0.5), logarithmic=True, as_histogram=True, 
+        aux_column=None, **kwargs):
+        """
+        Show a 2d histogram of the differential mean node abundances for a given
+        element and ion, but compared by setup.
+        """
+
+        columns = [reference_column, "{0}{1}".format(element, ion)]
+        """
+        if aux_column is not None:
+            columns += [aux_column]
+            (X, Y, Z), (cnames, nodes, setups) \
+                = self.release._match_node_results(columns)
+        else:
+        """
+        (X, Y), (cnames, nodes, setups) = self.release._match_node_results(
+            columns)
+
+        setups = map(str.strip, setups)
+        reference_setup_index = setups.index(reference_setup)
+        
+        mask = np.ones(len(setups), dtype=bool)
+        mask[reference_setup_index] = False
+
+        if setup is None:
+            comparison_setups = [] + setups
+            comparison_setups.remove(reference_setup)
+        else:
+            comparison_setups = [setup]
+
+        # Is there anything to show?
+        for setup in comparison_setups:
+            index = setups.index(setup)
+            diff = Y[:, :, index] - Y[:, :, reference_setup_index]
+            if np.any(np.isfinite(diff)):
+                break
+        else:
+            return None
+
+        # Create a figure of the right dimensions.
+        Nx, Ny = len(comparison_setups), len(nodes)
+        xscale, yscale, escale = (4, 2, 2)
+        xspace, yspace = (0.05, 0.1)
+        lb, tr = (0.5, 0.2)
+        xs = xscale * Nx + xscale * (Nx - 1) * xspace
+        ys = yscale * Ny + yscale * (Ny - 1) * yspace
+
+        xdim = lb * escale + xs + tr * escale
+        ydim = lb * escale + ys + tr * escale 
+
+        fig, axes = plt.subplots(Ny, Nx, figsize=(xdim, ydim))
+        fig.subplots_adjust(
+            left=(lb * escale)/xdim,
+            right=(tr * escale + xs)/xdim,
+            bottom=(lb * escale)/ydim,
+            top=(tr * escale + ys)/ydim,
+            wspace=xspace, hspace=yspace)
+        axes = np.atleast_2d(axes)
+        if len(comparison_setups) == 1: axes = axes.T
+        
+        # Get the extents and common bin sizes.
+        x_min, x_max = x_extent \
+            or (np.floor(np.nanmin(X)), np.ceil(np.nanmax(X)))
+        x_bins = np.linspace(x_min, x_max, bins + 1)
+
+
+        Y_diff = np.repeat(Y[:, :, reference_setup_index], len(setups) - 1)\
+            .reshape(len(cnames), len(nodes), len(setups) - 1) - Y[:, :, mask]
+        Y_diff_limit = np.max(np.abs([
+            np.floor(np.nanmin(Y_diff)), np.ceil(np.nanmax(Y_diff))]))
+        y_min, y_max = y_extent or (-Y_diff_limit, +Y_diff_limit)
+        y_bins = np.linspace(y_min, y_max, bins + 1)
+
+        # Prepare keywords.
+        histogram_kwds = {
+            "normed": kwargs.pop("normed", False),
+            "bins": (x_bins, y_bins)
+        }
+        scatter_kwds = {
+            "facecolor": "k",
+            "s": 50,
+            "zorder": 10
+        }
+        imshow_kwds = {
+            "aspect": "auto",
+            "interpolation": "nearest",
+            "cmap": colormaps.plasma,
+            "extent": (x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]),
+        }
+        imshow_kwds.update(kwargs)
+
+        for i, (node, axes_row) in enumerate(zip(nodes, axes)):
+
+            # For this node, do all the comparisons.
+            for j, (setup, ax) in enumerate(zip(comparison_setups, axes_row)):
+
+                setup_index = setups.index(setup)
+                
+                # Get the differential data.
+                X_data = X[:, i, setup_index]
+                Y_data = Y[:, i, setup_index] - Y[:, i, reference_setup_index]
+
+                if as_histogram:
+                    H, xe, ye = np.histogram2d(X_data, Y_data, **histogram_kwds)
+                    Z = np.log(1 + H.T) if logarithmic else H.T
+                    ax.imshow(Z, **imshow_kwds)
+
+                else:
+                    ax.scatter(X_data, Y_data, **scatter_kwds)
+
+                    ax.set_xlim(x_min, x_max)
+                    ax.set_ylim(y_min, y_max)
+
+                ax.axhline(0, zorder=-1, c="#666666")
+
+                if ax.is_last_row():
+                    ax.set_xlabel(reference_column)
+                else:
+                    ax.set_xticklabels([])
+
+                if ax.is_first_col():
+                    ax.set_ylabel("$\Delta${0}{1}".format(element, ion))
+                else:
+                    ax.set_yticklabels([])
+
+                ax.text(0.95, 0.95, "{0}\n({1})".format(node.strip(), setup),
+                    verticalalignment="top", horizontalalignment="right",
+                    transform=ax.transAxes)
+                
+                if np.any(np.isfinite(Y_data)):
+                    ax.text(0.05, 0.95, r"$\mu = {0:.2f}$".format(
+                        np.nanmean(Y_data)),
+                        verticalalignment="top", horizontalalignment="left",
+                        transform=ax.transAxes)
+                    ax.text(0.05, 0.95, "\n" + r"$\sigma = {0:.2f}$".format(
+                        np.nanstd(Y_data)), 
+                        verticalalignment="top", horizontalalignment="left",
+                        transform=ax.transAxes)
+        return fig
+
     def differential_line_abundances(self, element, ion, scaled=False, bins=50,
         absolute_abundance_extent=None, differential_abundance_extent=(-0.5, 0.5),
         ignore_flagged=True, show_legend=True, **kwargs):

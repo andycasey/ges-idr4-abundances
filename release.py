@@ -73,6 +73,38 @@ class DataRelease(object):
             return self._node_colors
 
 
+    def _get_comparable_species(self):
+
+        ions = (1, 2, 3)
+        elements = """Pr Ni Gd Pd Pt Ru S Na Nb Nd Mg Li Pb Re Tl Tm Rb Ti As Te
+            Rh Ta Be Xe Ba Tb H Yb Bi W Ar Fe Br Dy Hf Mo He Cl C B F I Sr K Mn
+            O Ne P Si Th U Sn Sm V Y Sb N Os Se Sc Hg Zn La Ag Kr Co Ca Ir Eu
+            Al Ce Cd Ho Ge Lu Au Zr Ga In Cs Cr Cu Er""".split()
+
+        comparable = []
+        for element in elements:
+            for ion in ions:
+                if self._setups_with_node_abundance(element, ion):
+                    comparable.append((element, ion))
+        return comparable
+
+
+
+    def _setups_with_node_abundance(self, element, ion, **kwargs):
+
+        species = "{0}{1}".format(element.lower(), ion)
+        _ = self.retrieve_table("SELECT * FROM node_results LIMIT 1")
+        if species not in _.dtype.names: return []
+
+        setups = self.retrieve_column("""SELECT DISTINCT ON (T.setup) T.setup
+            FROM node_results T JOIN 
+            (SELECT cname, setup, node, {0} FROM node_results) T2 ON (
+                T.cname = T2.cname AND T.node = T2.node AND T.setup <> T2.setup
+                AND T.{0} <> 'NaN' AND T2.{0} <> 'NaN')""".format(species),
+            asarray=True)
+        return map(str.strip, [] if setups is None else setups)
+
+
     def _match_node_results(self, columns):
         """
         Match columns from the node results table. This matches measurements on
