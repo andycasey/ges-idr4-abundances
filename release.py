@@ -73,6 +73,88 @@ class DataRelease(object):
             return self._node_colors
 
 
+    def _match_node_results(self, columns):
+        """
+        Match columns from the node results table. This matches measurements on
+        a per-cname, per-node, per-setup basis. This function returns a tuple
+        of arrays (the tuple has the same length as columns) where each array
+        has shape (N_cnames, N_nodes, N_setups), as well as a three-length
+        tuple containing the corresponding CNAMEs, node names, and setups.
+
+        :param columns:
+            The columns from node_results to return in the matched arrays.
+
+        :type columns:
+            list of str
+
+        :returns:
+            A tuple containing arrays of shape (N_cnames, N_nodes, N_setups) and
+            a tuple containing the corresponding CNAME, nodes, and setups.
+        """
+
+        if isinstance(columns, (str, unicode)):
+            columns = [columns]
+        columns = map(str.lower, columns)
+
+        cnames = self.retrieve_column("""SELECT DISTINCT ON (cname) cname
+            FROM node_results ORDER BY cname ASC""", asarray=True)
+
+        setups = self.retrieve_column("""SELECT DISTINCT ON (setup) setup
+            FROM node_results ORDER BY setup ASC""", asarray=True)
+
+        nodes = self.retrieve_column("""SELECT DISTINCT ON (node) node
+            FROM node_results ORDER BY node ASC""", asarray=True)
+
+        # Create a table which we will use to do the outer joins against
+        # This way any missing values just get filled with nans
+        table_name = "tmp_" + utils.random_string(size=10)
+        self.execute("""
+            DROP TABLE IF EXISTS {table_name};
+            DROP INDEX IF EXISTS {table_name}_index;
+            CREATE TABLE {table_name} AS (SELECT DISTINCT ON (cname, setup)
+                cname, setup FROM node_results);
+            CREATE INDEX {table_name}_index ON {table_name} (cname, setup);
+            """.format(table_name=table_name))
+        self._database.commit()
+
+        # Now do the cross-matches for each node.
+        query = """SELECT DISTINCT ON (T.cname, T.setup) T.cname, T.setup,
+            {columns} FROM {table_name} T LEFT OUTER JOIN node_results T2 ON (
+                T.cname = T2.cname AND T.setup = T2.setup
+                AND T2.node = '{node}')
+            ORDER BY T.cname, T.setup ASC""".format(
+                columns=", ".join(["T2.{}".format(_) for _ in columns]),
+                table_name=table_name, node="{node}")
+
+        shape = map(len, (cnames, nodes, setups))
+        X = [np.nan * np.ones(shape) for _ in columns]
+
+        cname_indexes, setup_indexes = None, None
+        for node_index, node in enumerate(nodes):
+            print("doing node {}".format(node))
+
+            data = self.retrieve_table(query.format(node=node))
+
+            if cname_indexes is None:
+                cname_indexes = np.zeros(len(data))
+                setup_indexes = np.zeros(len(data))
+
+                for i, row in enumerate(data):
+                    cname_indexes[i] = np.where(cnames == row["cname"])[0][0]
+                    setup_indexes[i] = np.where(setups == row["setup"])[0][0]
+
+            for row, cname_index, setup_index \
+            in zip(data, cname_indexes, setup_indexes):
+                for j, column in enumerate(columns):
+                    X[j][cname_index, node_index, setup_index] = row[column]
+
+        self.execute("DROP TABLE {table_name}".format(table_name=table_name))
+        self._database.commit()
+
+        return (X, (cnames, nodes, setups))
+
+
+
     def _match_species_abundances(self, element, ion, additional_columns=None,
         scaled=False, include_flagged_lines=False):
         """
