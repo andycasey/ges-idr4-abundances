@@ -120,8 +120,6 @@ class AbundanceHomogenisation(object):
 
                 line_variance = np.nanvar(np.abs(matchers))
 
-                assert line_variance > 0
-
                 if line_variance == 0:
                     # This line was only measured by one node in some stars, and
                     # in those stars there are no other measurements of this
@@ -151,22 +149,22 @@ class AbundanceHomogenisation(object):
         # Create an index to speed things up.
         # To prevent parallel problems, first check that the index has not been
         # created by a parallel homogenisation script.
-        if 1 > self.release.retrieve("""SELECT count(*) FROM pg_indexes
-            WHERE schemaname = 'public' AND tablename = 'line_abundances' AND
-            indexname = 'homogenised_line_abundances_species_index'""")[0][0]:      
-
+        try:    
             self.release.execute("""CREATE INDEX
                 homogenised_line_abundances_species_index
                 ON homogenised_line_abundances (cname, element, ion)""")
             self.release.commit()
+
+        except:
+            self.release.execute("rollback")
 
         # To homogenise the spectrum abundances, we will need the correlation
         # coefficients between each line.
 
         # Match the homogenised line abundances on a per-star basis.
         Q, Q_wavelengths = self.release._match_homogenised_line_abundances(
-            element, ion, ignore_gaps=True, include_limits=False)
-        Q_rho = np.atleast_2d(np.corrcoef(Q))
+            element, ion, ignore_gaps=False, include_limits=False)
+        Q_rho = np.atleast_2d(np.ma.corrcoef(Q))
 
         for j, cname in enumerate(cnames):
             self.spectrum_abundances(element, ion, cname, rho=Q_rho,
@@ -330,12 +328,18 @@ class AbundanceHomogenisation(object):
 
                 # Build the covariance matrix.
                 cov = np.ones((N_lines, N_lines))
-                for i, wavelength_i in enumerate(group["wavelength"]):
-                    for j, wavelength_j in enumerate(group["wavelength"]):
-                        if i == j: continue
-                        i_index = rho_wavelengths.index(wavelength_i)
-                        j_index = rho_wavelengths.index(wavelength_j)
-                        cov[i, j] *= rho[i_index, j_index]
+                if np.all(np.isfinite(rho)):
+                    for i, wavelength_i in enumerate(group["wavelength"]):
+                        for j, wavelength_j in enumerate(group["wavelength"]):
+                            if i != j:
+                                i_index = rho_wavelengths.index(wavelength_i)
+                                j_index = rho_wavelengths.index(wavelength_j)
+                                cov[i, j] *= rho[i_index, j_index]
+                else:
+                    logger.warn("No correlation coefficients for {0} {1}".format(
+                        element, ion))
+
+                cov[~np.isfinite(cov)] = 0
 
                 # Build the covariance matrix.
                 # Variances come from the individual homogenised lines.
@@ -366,14 +370,31 @@ class AbundanceHomogenisation(object):
                 # Calculate the homogenised values using the optimal weights.
                 x = np.array(group["abundance"])
                 mu = np.sum(w * x)
-                sigma = np.sqrt(unbiased_variance(w, cov))
+                variance = unbiased_variance(w, cov)
 
-                assert sigma > 0
-                assert np.all(np.isfinite([mu, sigma]))
+                # Ensure things are sensible, otherwise the matrix of correlation
+                # coefficients may not be correct.
+                if variance < 0:
+                    cov = np.ones((N_lines, N_lines)) \
+                        * (np.repeat(sigmas, N_lines) \
+                        * np.tile(sigmas, N_lines)).reshape((N_lines, -1))
+
+                    w = 1.0/np.diag(cov)
+                    w /= w.sum()
+                    mu = np.sum(w * x)
+                    variance = unbiased_variance(w, cov)
+                    logger.warn("Negative homogenised variance for {0} / {1}. "\
+                        "Ignoring the correlation coefficients provided.".format(
+                            group["cname"][0],
+                            group["spectrum_filename_stub"][0]))
+
+                assert variance > 0
+                assert np.all(np.isfinite([mu, variance]))
 
                 result = self.insert_spectrum_abundance(element, ion,
                     group["cname"][0], group["spectrum_filename_stub"][0],
-                    mu, sigma, max(group["num_measurements"]), N_lines, False)
+                    mu, np.sqrt(variance), max(group["num_measurements"]),
+                    N_lines, False)
 
         # TODO: should we average the abundances from multiple spectra?
         return None
