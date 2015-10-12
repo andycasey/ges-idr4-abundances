@@ -38,6 +38,42 @@ class AbundanceBiases(object):
     def __init__(self, release):
         self.release = release
 
+
+    def setup(self, element, ion, reference_setup, **kwargs):
+        """
+        Calculate the abundance bias for the given element for each setup,
+        with respect to a reference setup.
+        """
+
+        # Do it on a per-node basis.
+        # biases[node][setup]
+
+        species = "{0}{1}".format(element.lower(), ion)
+        X, (cnames, nodes, setups) = self.release._match_node_results(species)
+        X = X[0]
+
+        setups = map(str.strip, setups)
+        comparison_setups = [] + setups
+        comparison_setups.remove(reference_setup)
+        reference_setup_index = setups.index(reference_setup)
+        
+        biases = { node: { setup: (0, np.nan, -1) for setup in setups } \
+            for node in nodes }
+
+        for i, node in enumerate(nodes):
+            for setup in comparison_setups:
+                j = setups.index(setup)
+
+                data = X[:, i, j] - X[:, i, reference_setup_index]
+                N = np.isfinite(data).sum()
+                mu = np.nanmean(data) if N > 0 else 0
+                sigma = np.nanstd(data)
+                
+                biases[node][setup] = (mu, sigma, N)
+
+        return biases
+
+
     def solar(self, element, ion, **kwargs):
         """
         Calculate the abundance bias for each wavelength for each node, with
