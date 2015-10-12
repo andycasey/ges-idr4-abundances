@@ -170,8 +170,7 @@ class AbundancePlotting(object):
 
     def differential_mean_abundances_per_setup(self, element, ion, 
         reference_setup, reference_column, setup=None, bins=20, x_extent=None,
-        y_extent=(-0.5, 0.5), logarithmic=True, as_histogram=True, 
-        aux_column=None, **kwargs):
+        y_extent=(-0.5, 0.5), logarithmic=True, as_histogram=True, **kwargs):
         """
         Show a 2d histogram of the differential mean node abundances for a given
         element and ion, but compared by setup.
@@ -279,11 +278,12 @@ class AbundancePlotting(object):
 
                 else:
                     ax.scatter(X_data, Y_data, **scatter_kwds)
-
                     ax.set_xlim(x_min, x_max)
                     ax.set_ylim(y_min, y_max)
 
                 ax.axhline(0, zorder=-1, c="#666666")
+                ax.xaxis.set_major_locator(MaxNLocator(5))
+                ax.yaxis.set_major_locator(MaxNLocator(5))
 
                 if ax.is_last_row():
                     ax.set_xlabel(reference_column)
@@ -309,6 +309,258 @@ class AbundancePlotting(object):
                         verticalalignment="top", horizontalalignment="left",
                         transform=ax.transAxes)
         return fig
+
+
+    def differential_mean_abundances(self, element, ion, bins=50,
+        absolute_abundance_extent=None, differential_abundance_extent=(-0.5, 0.5),
+        show_legend=True):
+        """
+        Show histograms of the absolute and differential mean abundances for a
+        given element and ion.
+
+        :param element:
+            The atomic element of interest.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the species of interest (1 indicates neutral)
+
+        :type ion:
+            int
+
+        :param bins: [optional]
+            The number of bins to show in the histograms.
+
+        :type bins:
+            int
+
+        :param absolute_abundance_extent: [optional]
+            The lower and upper range to show in absolute abundances.
+
+        :type absolute_abundance_extent:
+            None or two length tuple of floats
+
+        :param differential_abundance_extent: [optional]
+            The lower and upper range to show in differential abundances.
+
+        :type differential_abundance_extent:
+            None or a two-length tuple of floats
+
+        :param show_legend: [optional]
+            Show a legend with the node colours.
+
+        :type show_legend:
+            bool
+        """
+
+        species = "{0}{1}".format(element.lower().strip(), ion)
+        data = self.release.retrieve_table(
+            """SELECT node, setup, {species}
+            FROM node_results""".format(species=species))
+        if data is None: return
+
+        # Use only finite measurements.
+        measurements = np.array(data[species].astype(float))
+        use = np.isfinite(measurements)
+        if not any(use): return None
+
+        data = data[use]
+        measurements = measurements[use]
+        setups = sorted(map(str.strip, set(data["setup"])))
+
+        K, N_lines = 3, len(setups)
+
+        # Histograms be square as shit.
+        scale = 2.0
+        wspace, hspace = 0.3, 0.2
+        lb, tr = 0.5, 0.2
+        ys = scale * N_lines + scale * (N_lines - 1) * wspace
+        xs = scale * K + scale * (K - 1) * hspace
+        
+        xdim = lb * scale + xs + tr * scale
+        ydim = lb * scale + ys + tr * scale
+
+        fig, axes = plt.subplots(N_lines, K, figsize=(xdim, ydim))
+        fig.subplots_adjust(
+            left=(lb * scale)/xdim,
+            bottom=(lb * scale)/ydim,
+            right=(lb * scale + xs)/xdim,
+            top=(tr * scale + ys)/ydim,
+            wspace=wspace, hspace=hspace)
+        axes = np.atleast_2d(axes)
+
+        bin_min, bin_max = absolute_abundance_extent \
+            or (data[species].min(), data[species].max())
+       
+        if abs(bin_min - bin_max) < 0.005:
+            bin_min, bin_max = bin_min - 0.5, bin_min + 0.5
+
+        hist_kwds = {
+            "histtype": "step",
+            "bins": np.linspace(bin_min, bin_max, bins + 1),
+            "normed": True,
+        }
+        full_distribution_color = "k"
+        comp_distribution_color = "#666666"
+
+        for i, (ax, setup) in enumerate(zip(axes.T[0], setups)):
+            # Show the full distribution.
+            ax.hist(measurements, color=full_distribution_color, **hist_kwds)
+
+            # Show the distribution for this setup.
+            match = data["setup"] == setup
+            ax.hist(measurements[match], color=comp_distribution_color,
+                **hist_kwds)
+
+            ax.xaxis.set_major_locator(MaxNLocator(5))
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+            if not ax.is_last_row():
+                ax.set_xticklabels([])
+
+            else:
+                ax.set_xlabel(latexify("{0} {1}".format(element, ion)))
+            
+            ax.text(0.95, 0.95, latexify(len(data)), transform=ax.transAxes,
+                verticalalignment="top", horizontalalignment="right",
+                color=full_distribution_color)
+            ax.text(0.95, 0.95, latexify("\n{}".format(match.sum())),
+                transform=ax.transAxes, verticalalignment="top",
+                horizontalalignment="right",
+                color=comp_distribution_color)
+
+        # Plot the full distribution of differential abundances.
+        # (but first,..) determine the full matrix of differential abundances.
+        X, (cnames, nodes, setups) = self.release._match_node_results([species])
+        X = X[0]
+
+        #X, nodes, diff_data = self.release._match_species_abundances(element,
+        #    ion, scaled=scaled, include_flagged_lines=not ignore_flagged)
+
+        # Calculate the full differential abundances.
+        #X_diff, indices = utils.calculate_differential_abundances(X[:, :,
+        #    full_output=True)
+        #if X_diff is None:
+        #    return fig
+        #X_diff = X_diff[np.isfinite(X_diff)]
+
+        b_min, b_max = differential_abundance_extent
+        #b_min, b_max = differential_abundance_extent \
+        #    or (np.nanmin(X_diff), np.nanmax(X_diff))
+        hist_kwds["bins"] = np.linspace(b_min, b_max, bins + 1)
+
+        for i, (ax, setup) in enumerate(zip(axes.T[1], setups)):
+            ax.set_title(latexify(setup))
+            ax.xaxis.set_major_locator(MaxNLocator(5))
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+            if not ax.is_last_row():
+                ax.set_xticklabels([])
+            else:
+                ax.set_xlabel(r"$\Delta${0} {1}".format(element, ion))
+
+            X_diff_setup = utils.calculate_differential_abundances(
+                X[:, :, i], full_output=False).flatten()
+
+            #ax.text(0.95, 0.95, latexify(X_diff.size), transform=ax.transAxes,
+            #    verticalalignment="top", horizontalalignment="right",
+            #    color=full_distribution_color)
+            ax.text(0.95, 0.95, 
+                latexify("\n{}".format(np.isfinite(X_diff_setup).sum())),
+                verticalalignment="top", horizontalalignment="right",
+                color=comp_distribution_color, transform=ax.transAxes)
+
+            #if X_diff.size == 0:
+            #    continue
+
+            """
+            if ax.is_first_row():
+                ax.text(0.05, 0.95,
+                    r"$\mu = {0:.2f}$" "\n" r"$\sigma = {1:.2f}$".format(
+                    np.nanmean(X_diff), np.nanstd(X_diff)),  fontsize=10,
+                    transform=ax.transAxes, color=full_distribution_color,
+                    verticalalignment="top", horizontalalignment="left")
+                    
+            # Show the full distribution of differential abundances.
+            ax.hist(X_diff, color=full_distribution_color, **hist_kwds)
+            """
+
+            # Show the distribution of differential abundances for this 
+            # wavelength.
+            if np.isfinite(X_diff_setup).sum() > 0:
+                ax.hist(X_diff_setup, color=comp_distribution_color,
+                    **hist_kwds)
+            
+
+        # Plot the node-to-node distribution of the differential abundances.
+        # Node X compared to all others
+        # Node Y compared to all others, etc.
+        colors = self.release.node_colors
+        for i, (ax, setup) in enumerate(zip(axes.T[2], setups)):
+            # Show the full distribution of differential abundances.
+            # Show the distribution of differential abundances for each node.
+            X_diff_setup = utils.calculate_differential_abundances(X[:, :, i],
+                full_output=False)
+
+            if np.any(np.isfinite(X_diff_setup)):
+                ax.hist(X_diff_setup.flatten(),
+                    color=full_distribution_color, **hist_kwds)
+
+            else:
+                ax.set_ylim(0, 1) # For prettyness
+
+            ax.text(0.95, 0.95, np.isfinite(X_diff_setup).sum(),
+                transform=ax.transAxes, color=full_distribution_color,
+                verticalalignment="top", horizontalalignment="right")
+            
+
+            for j, node in enumerate(nodes):
+                ax.plot([], [], label=node, c=colors[node])
+
+                # This -1, +1 business ensures the third column always contains
+                # Node - someone else.
+                mask = np.ones(len(nodes), dtype=bool)
+                mask[j] = False
+                X_diff_setup_node \
+                    = (np.repeat(X[:, j, i], len(nodes) - 1).reshape(
+                        (-1, len(nodes) - 1)) - X[:, mask, i]).flatten()
+
+                #X_diff_setup_node = np.hstack([[-1, +1][j == idx[0]] * \
+                #    X_diff_setup[:, k].flatten() \
+                #    for k, idx in enumerate(indices) if j in idx])
+                
+                if np.any(np.isfinite(X_diff_setup_node)) and \
+                    np.any((X_diff_setup_node > bin_min) * \
+                    (bin_max > X_diff_setup_node)):
+                    ax.hist(X_diff_setup_node, color=colors[node],
+                        **hist_kwds)
+                
+                ax.text(0.95, 0.95, latexify("{0}{1}".format("\n"*(j + 1), 
+                        np.isfinite(X_diff_setup_node).sum())),
+                    transform=ax.transAxes, verticalalignment="top",
+                    horizontalalignment="right", color=colors[node])
+
+            if np.any(np.isfinite(X_diff_setup)):
+                ax.text(0.05, 0.95, 
+                    r"$\mu = {0:.2f}$" "\n" r"$\sigma = {1:.2f}$".format(
+                    np.nanmean(X_diff_setup), np.nanstd(X_diff_setup)),
+                    fontsize=10, transform=ax.transAxes, 
+                    color=full_distribution_color,
+                    verticalalignment="top", horizontalalignment="left")
+
+            ax.xaxis.set_major_locator(MaxNLocator(5))
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+            if not ax.is_last_row():
+                ax.set_xticklabels([])
+            else:
+                ax.set_xlabel(r"$\Delta${0} {1}".format(element, ion))
+
+        if show_legend:
+            axes.T[0][0].legend(*axes.T[2][0].get_legend_handles_labels(),
+                loc="upper left", frameon=False, fontsize=10)
+
+        return fig
+
 
     def differential_line_abundances(self, element, ion, scaled=False, bins=50,
         absolute_abundance_extent=None, differential_abundance_extent=(-0.5, 0.5),
