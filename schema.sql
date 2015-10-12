@@ -14,6 +14,21 @@ ALTER TABLE homogenised_abundances ADD COLUMN id
     BIGSERIAL PRIMARY KEY;
 
 
+DROP TABLE IF EXISTS homogenised_mean_abundances;
+CREATE TABLE homogenised_mean_abundances (
+    cname char(16) not null,
+    setup char(9) not null,
+    element char(2) not null,
+    ion integer not null,
+    abundance real,
+    e_abundance real,
+    upper_abundance int default 0,
+    num_lines int default 0,
+    num_nodes int default 0);
+ALTER TABLE homogenised_mean_abundances ADD COLUMN id
+    BIGSERIAL PRIMARY KEY;
+
+
 DROP TABLE IF EXISTS line_abundance_flags;
 CREATE TABLE line_abundance_flags(
     description char(120) not null);
