@@ -919,7 +919,7 @@ class AbundancePlotting(object):
 
     def benchmark_setup_abundances(self, element, ion, benchmark_filename,
         sort_by=None, discretise=True, differential_abundance_extent=(-1, +1),
-        **kwargs):
+        group=True, **kwargs):
         """
         Show the difference in mean abundances for each benchmark and each
         setup, based on the Jofre et al. (2015) abundances.
@@ -960,6 +960,14 @@ class AbundancePlotting(object):
 
         :type differential_abundance_extent:
             None or a two-length tuple of floats
+
+        :param group: [optional]
+            Group and average the results from each benchmark before fitting a
+            line. This option is only used when `discretise` is set to False and
+            the `sort_by` parameter is a continuous variable.
+
+        :type group:
+            bool
         
         :returns:
             A figure showing the difference in the line abundances for all of
@@ -981,11 +989,8 @@ class AbundancePlotting(object):
             return None
 
         if len(use_benchmarks) < len(benchmarks):
-            logger.warn("The following benchmark stars were excluded because "\
-                "they had no {0} measurements: {1}".format(element,
-                    ", ".join([bm.name for bm in \
-                        set(benchmarks).difference([use_benchmarks])])))
-
+            logger.warn("Some stars were excluded because they had no measurements")
+            
         # Sort the useable benchmarks.
         if not discretise and sort_by is None:
             raise ValueError("sort_by must be given (as a continuous value) if"\
@@ -1088,7 +1093,7 @@ class AbundancePlotting(object):
                     if discretise:
                         x_data[node].extend((j + 0.5) * np.ones(len(match_node)))
                     else:
-                        x_data[node].extent(getattr(benchmark, sort_by) \
+                        x_data[node].extend(getattr(benchmark, sort_by) \
                             * np.ones(len(match_node)))
 
                     difference = group["abundance"][match_node].astype(float) \
@@ -1140,8 +1145,11 @@ class AbundancePlotting(object):
                 else:
                     if ax.is_last_row():
                         ax.set_xlabel(sort_by)
+                    else:
+                        ax.set_xticklabels([])
 
-                if len(x_data[node]) == 0: continue
+                if len(x_data[node]) == 0:
+                    continue
 
                 color = self.release.node_colors[node]
                 
@@ -1166,17 +1174,59 @@ class AbundancePlotting(object):
 
                 # If we're not discretising them, we should probably fit a line
                 # or some shit.
-                if not discretise:
-                    A = np.vstack((np.ones_like(x), x)).T
-                    C = np.diag(y_err * yerr)
-                    cov = np.linalg.inv(np.dot(A.T, np.linalg.solve(C, A)))
-                    b, m = np.dot(cov, np.dot(A.T, np.linalg.solve(C, y)))
 
-                    _x = np.array([np.nanmin(x), np.nanmax(x)])
+                if not discretise:
+
+                    if group:
+                        # Average the results per benchmark.
+                        unique = np.unique(x)
+                        x, y, yerr = map(np.array, (x, y, yerr))
+
+                        x_grouped = []
+                        y_grouped = []
+                        yerr_grouped = []
+
+                        for unique_x in unique:
+                            if not np.isfinite(unique_x): continue
+
+
+                            match = (x == unique_x)
+                            #w = 1.0/(yerr[match]**2)
+                            #w /= w.sum()
+
+                            x_grouped.append(unique_x)
+                            y_grouped.append(np.nanmean(y[match]))
+                            yerr_grouped.append(np.nanstd(y[match])/match.sum())
+
+                        x = np.array(x_grouped)
+                        y = np.array(y_grouped)
+                        yerr = np.array(yerr_grouped)
+
+
+                    mask = np.isfinite(x) * np.isfinite(y)
+                    A = np.vstack((np.ones_like(x[mask]), x[mask])).T
+                    C = np.diag(yerr[mask] * yerr[mask])
+                    try:
+                        cov = np.linalg.inv(np.dot(A.T, np.linalg.solve(C, A)))
+                        b, m = np.dot(cov, np.dot(A.T, np.linalg.solve(C, y[mask])))
+
+                    except np.linalg.LinAlgError:
+                        m, b = np.polyfit(x[mask], y[mask], 1)
+
+                    _x = np.array(ax.get_xlim())
                     _y = m * _x + b
 
-                    ax.plot(_x, _y, c='k', lw=1, zorder=1000)
-                    print(node, m, b)
+                    ax.plot(_x, _y, c='k', linestyle='--', lw=2, zorder=1000)
+                    ax.set_xlim(_x)
+
+                    if np.isfinite([m, b]).all():
+                        ax.text(0.95, 0.95, r"$\{m, b\} = \{{\rm " \
+                            + r"{0:.1e}".format(m) + r"}, {\rm " \
+                            + r"{0:.1e}".format(b) + r"}\}$",
+                            transform=ax.transAxes,
+                            verticalalignment="top", horizontalalignment="right")
+
+                    print(node, setup, m, b)
 
             
             if differential_abundance_extent is not None:
@@ -1193,14 +1243,21 @@ class AbundancePlotting(object):
                     too_low = Counter(x_data[node][y_data[node] < lower])
 
                     for x_position, N in too_high.items():
+                        if not np.isfinite(x_position): continue
                         ax.text(x_position + .5, y_high, latexify(N), color="r",
                             fontsize=10, zorder=100, verticalalignment="top",
                             horizontalalignment="center")
 
                     for x_position, N in too_low.items():
+                        if not np.isfinite(x_position): continue
                         ax.text(x_position + .5, y_low, latexify(N), color="r",
                             fontsize=10, zorder=100, verticalalignment="bottom",
                             horizontalalignment="center")
+
+        if sort_by is not None and not discretise:
+            _ = np.array([ax.get_xlim() for ax in axes.flatten() if len(ax.collections) > 0])
+            limits = (np.min(_), np.max(_))
+            [ax.set_xlim(limits) for ax in axes.flatten()]
 
         fig.tight_layout()
         return fig
