@@ -22,6 +22,7 @@ from bias import AbundanceBiases
 from flag import AbundanceFlags
 from homogenise import AbundanceHomogenisation
 from plotting import AbundancePlotting
+from wg_plots import WGLevelPlotting
 
 logging.basicConfig(level=logging.DEBUG,
     format='%(asctime)-15s %(name)s %(levelname)s %(message)s')
@@ -44,6 +45,7 @@ class DataRelease(object):
         self.flags = AbundanceFlags(self)
         self.homogenise = AbundanceHomogenisation(self)
         self.plot = AbundancePlotting(self)
+        self.wg_plots = WGLevelPlotting(self)
 
         Config = namedtuple('Configuration', 
             'wavelength_tolerance, round_wavelengths')

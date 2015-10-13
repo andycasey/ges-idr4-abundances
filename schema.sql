@@ -1,3 +1,98 @@
+
+
+# FOR WG-level comparisons.
+
+DROP TABLE IF EXISTS wg_homogenised_abundances;
+CREATE TABLE wg_homogenised_abundances (
+    wg integer not null,
+    cname char(16) not null,
+    spectrum_filename_stub char(140) not null,
+    element char(2) not null,
+    ion integer not null,
+    abundance real default 'NaN',
+    wg15_abundance real,
+    e_abundance real,
+    upper_abundance int default 0,
+    num_lines int default 0,
+    num_measurements int default 0,
+    ENN real default 'NaN',
+    flag integer default 0);
+ALTER TABLE wg_homogenised_abundances ADD COLUMN id
+    BIGSERIAL PRIMARY KEY;
+
+
+DROP TABLE IF EXISTS observations;
+CREATE TABLE observations (
+    cname char(16) not null,
+    ges_fld char(23) not null,
+    object char(28) not null,
+    filename char(69) not null,
+    ges_type char(8) not null,
+    setup char(9) not null,
+    wg integer not null,
+    ra real not null,
+    dec real not null,
+    snr real not null,
+    vel real,
+    e_vel real,
+    vrot real,
+    e_vrot real,
+    teff real,
+    e_teff real,
+    nn_teff integer,
+    enn_teff real,
+    nne_teff integer,
+    sys_err_teff real,
+    logg real,
+    e_logg real,
+    nn_logg integer,
+    enn_logg real,
+    nne_logg integer,
+    sys_err_logg real,
+    feh real,
+    e_feh real,
+    nn_feh integer,
+    enn_feh real,
+    nne_feh integer,
+    sys_err_feh real,
+    xi real,
+    e_xi real,
+    nn_xi integer,
+    enn_xi real,
+    nne_xi integer,
+    mh real,
+    e_mh real,
+    nn_mh integer,
+    enn_mh real,
+    nne_mh integer,
+    alpha_fe real,
+    e_alpha_fe real,
+    nn_alpha_fe integer,
+    enn_alpha_fe real,
+    nne_alpha_fe integer,
+    vrad real,
+    e_vrad real,
+    vsini real,
+    e_vsini real,
+    lim_vsini integer,
+    teff_phot real,
+    e_teff_phot real,
+    teff_irfm_2mj real,
+    e_teff_irfm_2mj real,
+    teff_irfm_2mh real,
+    e_teff_irfm_2mh real,
+    teff_irfm_2mks real,
+    e_teff_irfm_2mks real,
+    teff_irfm_2mave real,
+    e_teff_irfm_2mave real,
+    fbol_irfm_2m real);
+ALTER TABLE observations ADD COLUMN id
+    BIGSERIAL PRIMARY KEY;
+
+
+
+
+
 DROP TABLE IF EXISTS homogenised_line_abundances;
 CREATE TABLE homogenised_line_abundances (
     cname char(16) not null,
