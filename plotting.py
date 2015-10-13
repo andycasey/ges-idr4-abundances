@@ -22,6 +22,357 @@ class AbundancePlotting(object):
     def __init__(self, release):
         self.release = release
 
+
+
+    def wg_benchmark_setup_abundances(self, element, ion, benchmark_filename,
+        wg, sort_by=None, discretise=True, differential_abundance_extent=(-1, +1),
+        group=True, **kwargs):
+        """
+        Show the difference in mean abundances for each benchmark and each
+        setup, based on the Jofre et al. (2015) abundances.
+
+        :param element:
+            The element name to show comparisons for.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to show (1 = neutral).
+
+        :type ion:
+            int
+
+        :param benchmark_filename:
+            The path containing abundance information for the benchmarks.
+
+        :type benchmark_filename:
+            str
+
+        :param sort_by: [optional]
+            Sort the benchmarks by some parameter (e.g., teff, logg, feh). The
+            default is name.
+
+        :type sort_by:
+            str
+
+        :param discretise: [optional]
+            Discretise the x-axis in order to show each star on its own.
+
+        :type discretise:
+            bool
+
+        :param differential_abundance_extent: [optional]
+            The lower and upper range to show in differential abundances.
+
+        :type differential_abundance_extent:
+            None or a two-length tuple of floats
+
+        :param group: [optional]
+            Group and average the results from each benchmark before fitting a
+            line. This option is only used when `discretise` is set to False and
+            the `sort_by` parameter is a continuous variable.
+
+        :type group:
+            bool
+        
+        :returns:
+            A figure showing the difference in the line abundances for all of
+            the benchmark stars.
+        """
+
+        benchmarks = utils.load_benchmarks(benchmark_filename)
+        if len(benchmarks) == 0:
+            logger.warn("No benchmarks found in {0}".format(benchmark_filename))
+            return None
+
+        ok = lambda bm: np.isfinite(bm.abundances.get(element, [np.nan])[0])
+        use_benchmarks = filter(ok, benchmarks)
+
+        if len(use_benchmarks) == 0:
+            logger.warn("No useable benchmarks. The sample of benchmarks ({0})"\
+                " did not contain any stars with measured {1} abundances."\
+                .format(len(benchmarks), element))
+            return None
+
+        if len(use_benchmarks) < len(benchmarks):
+            logger.warn("Some stars were excluded because they had no measurements")
+            
+        # Sort the useable benchmarks.
+        if not discretise and sort_by is None:
+            raise ValueError("sort_by must be given (as a continuous value) if"\
+                " discretise is disabled")
+
+        sort_by = sort_by or "name"
+        benchmarks = sorted(use_benchmarks, key=lambda bm: getattr(bm, sort_by))
+        
+        species = "{0}{1}".format(element.lower().strip(), ion)
+        _ = self.release.retrieve_table("SELECT * FROM node_results LIMIT 1")
+        upper_column = "upper_{}".format(species)
+        if upper_column not in _.dtype.names:
+            upper_column = "upper_combined_{}".format(species)
+
+        data = self.release.retrieve_table("""SELECT H.cname, H.wg, 
+                O.ges_fld, O.ges_type, O.setup, O.object, 
+                abundance, e_abundance, upper_abundance 
+            FROM wg_homogenised_abundances H JOIN (SELECT 
+                cname, ges_fld, ges_type, setup, object, wg FROM observations) O
+            ON (TRIM(H.element) = '{element}' AND H.ion = '{ion}' AND
+                H.cname = O.cname AND H.wg = '{wg}' AND O.wg = '{wg}' AND
+                O.ges_type LIKE '%_BM' AND H.abundance <> 'NaN')""".format(
+                element=element, ion=ion, wg=wg))
+        if data is None: return None
+
+        nodes = [wg]
+        setups = sorted(set(data["setup"]))
+        Nx, Ny = len(nodes), len(setups)
+
+        xscale, yscale, escale = (8, 2, 2)
+        xspace, yspace = (0.05, 0.1)
+        lb, tr = (0.5, 0.2)
+        xs = xscale * Nx + xscale * (Nx - 1) * xspace
+        ys = yscale * Ny + yscale * (Ny - 1) * yspace
+
+        xdim = lb * escale + xs + tr * escale
+        ydim = lb * escale + ys + tr * escale 
+
+        fig, axes = plt.subplots(Ny, Nx, figsize=(xdim, ydim))
+        fig.subplots_adjust(
+            left=(lb * escale)/xdim,
+            right=(tr * escale + xs)/xdim,
+            bottom=(lb * escale)/ydim,
+            top=(tr * escale + ys)/ydim,
+            wspace=xspace, hspace=yspace)
+        axes = np.atleast_2d(axes)
+        if axes.shape[0] == 1: axes = axes.T
+
+        scatter_kwds = {
+            "s": 50,
+            "zorder": 10
+        }
+
+        homogenised_scatter_kwds = {
+            "facecolor": "w",
+            "zorder": 100,
+            "s": 50,
+            "lw": 2
+        }
+
+        def clean(name):
+            return name.strip().lower().replace("_", "")
+
+        data = data.group_by(["setup"])
+
+        homogenised_x_data = {}
+        homogenised_y_data = {}
+        homogenised_y_err = {}
+
+
+        for i, (ax_group, setup, group) \
+        in enumerate(zip(axes, setups, data.groups)):
+
+            x_data = { node: [] for node in nodes }
+            y_data = { node: [] for node in nodes }
+            is_flagged = { node: [] for node in nodes }
+            y_err = { node: [] for node in nodes }
+            y_mean_offsets = { node: [] for node in nodes }
+
+            for j, benchmark in enumerate(benchmarks):
+                logger.debug("Matching on {}".format(benchmark))
+
+                # Either matches on OBJECT or GES_FLD
+                name = benchmark.name.lower()
+                # TODO do this better
+
+                group["ges_fld"] = map(clean, group["ges_fld"])
+                group["object"] = map(clean, group["object"])
+                match = np.array([k for k, row in enumerate(group) \
+                    if name == row["ges_fld"] or name == row["object"]])
+
+                logger.debug("Found {0} matches for {1}".format(
+                    len(match), benchmark))
+
+                if not any(match):
+                    logger.warn("Found no benchmark matches for {0}"\
+                        .format(benchmark))
+                    continue
+
+                for node in nodes:
+                    match_node = match[group["wg"][match] == node]
+
+                    if discretise:
+                        x_data[node].extend((j + 0.5) * np.ones(len(match_node)))
+                    else:
+                        x_data[node].extend(getattr(benchmark, sort_by) \
+                            * np.ones(len(match_node)))
+
+                    difference = group["abundance"][match_node].astype(float) \
+                        - benchmark.abundances[element][0]
+                    y_data[node].extend(difference)
+                    y_err[node].extend(
+                        group["e_abundance"][match_node].astype(float))
+
+                    #y_mean_offsets[node].append(
+                    #    np.nanmean(difference[group["flags"][match_node] == 0]))
+                    #is_flagged[node].extend(group["flags"][match_node] > 0)
+
+
+
+            # Arrayify!
+            for node in nodes:
+                x_data[node] = np.array(x_data[node])
+                y_data[node] = np.array(y_data[node])
+                y_err[node] = np.array(y_err[node])
+                is_flagged[node] = np.array(is_flagged[node])
+
+            for k, (ax, node) in enumerate(zip(ax_group, nodes)):
+
+                if ax.is_first_row():
+                    ax.set_title(node)
+
+                if ax.is_first_col():
+                    ax.text(0.05, 0.95, latexify(setup),
+                        transform=ax.transAxes, horizontalalignment="left",
+                        verticalalignment="top")
+
+                ax.axhline(0, c="k", zorder=0)
+
+                if ax.is_first_col():
+                    ax.set_ylabel(r"$\Delta\log_{\epsilon}({\rm " + \
+                        "{0}\,{1}".format(element, ion) + "})$")
+                else:
+                    ax.set_yticklabels([])
+
+                if discretise:
+                    ax.set_xlim(0, len(benchmarks))
+                    ax.set_xticks(np.arange(len(benchmarks)))
+                    if ax.is_last_row():
+                        ax.set_xticklabels([bm.name for bm in benchmarks],
+                            rotation=90, verticalalignment="top",
+                            horizontalalignment="left")
+                    else:
+                        ax.set_xticklabels([])
+                else:
+                    if ax.is_last_row():
+                        ax.set_xlabel(sort_by)
+                    else:
+                        ax.set_xticklabels([])
+
+                if len(x_data[node]) == 0:
+                    continue
+
+                color = self.release.node_colors.get(node, "#666666")
+                
+                x = np.array(x_data[node])
+                y = np.array(y_data[node])
+                yerr = np.array(y_err[node])
+
+                ax.scatter(x, y, facecolor=color, **scatter_kwds)
+                ax.errorbar(x, y, yerr=yerr, lc="k", ecolor="k", aa=True, 
+                    fmt=None, mec="k", mfc="w", ms=6, zorder=9)               
+
+                # Show relative mean and std. dev for each node
+                mean = np.nanmean(y_data[node])
+                sigma = np.nanstd(y_data[node])
+
+                ax.axhline(np.nanmean(y_mean_offsets[node]), c=color, lw=2,
+                    linestyle=":")
+                ax.axhspan(mean - sigma, mean + sigma, ec=None, fc=color, 
+                    alpha=0.5, zorder=-10)
+                ax.axhline(mean, c=color, lw=2, zorder=-1,
+                    label=latexify(str(node).strip()))
+
+                # If we're not discretising them, we should probably fit a line
+                # or some shit.
+
+                if not discretise:
+
+                    if group:
+                        # Average the results per benchmark.
+                        unique = np.unique(x)
+                        x, y, yerr = map(np.array, (x, y, yerr))
+
+                        x_grouped = []
+                        y_grouped = []
+                        yerr_grouped = []
+
+                        for unique_x in unique:
+                            if not np.isfinite(unique_x): continue
+
+
+                            match = (x == unique_x)
+                            #w = 1.0/(yerr[match]**2)
+                            #w /= w.sum()
+
+                            x_grouped.append(unique_x)
+                            y_grouped.append(np.nanmean(y[match]))
+                            yerr_grouped.append(np.nanstd(y[match])/match.sum())
+
+                        x = np.array(x_grouped)
+                        y = np.array(y_grouped)
+                        yerr = np.array(yerr_grouped)
+
+
+                    mask = np.isfinite(x) * np.isfinite(y)
+                    A = np.vstack((np.ones_like(x[mask]), x[mask])).T
+                    C = np.diag(yerr[mask] * yerr[mask])
+                    try:
+                        cov = np.linalg.inv(np.dot(A.T, np.linalg.solve(C, A)))
+                        b, m = np.dot(cov, np.dot(A.T, np.linalg.solve(C, y[mask])))
+
+                    except np.linalg.LinAlgError:
+                        m, b = np.polyfit(x[mask], y[mask], 1)
+
+                    _x = np.array(ax.get_xlim())
+                    _y = m * _x + b
+
+                    ax.plot(_x, _y, c='k', linestyle='--', lw=2, zorder=1000)
+                    ax.set_xlim(_x)
+
+                    if np.isfinite([m, b]).all():
+                        ax.text(0.95, 0.95, r"$\{m, b\} = \{{\rm " \
+                            + r"{0:.1e}".format(m) + r"}, {\rm " \
+                            + r"{0:.1e}".format(b) + r"}\}$",
+                            transform=ax.transAxes,
+                            verticalalignment="top", horizontalalignment="right")
+
+                    print(node, setup, m, b)
+
+            
+            if differential_abundance_extent is not None:
+                extent = lower, upper = differential_abundance_extent
+                
+                y_high = 0.95 * np.ptp(extent) + lower
+                y_low = 0.05 * np.ptp(extent) + lower
+
+                for ax, node in zip(ax_group, nodes):
+
+                    ax.set_ylim(extent)
+
+                    too_high = Counter(x_data[node][y_data[node] > upper])
+                    too_low = Counter(x_data[node][y_data[node] < lower])
+
+                    for x_position, N in too_high.items():
+                        if not np.isfinite(x_position): continue
+                        ax.text(x_position + .5, y_high, latexify(N), color="r",
+                            fontsize=10, zorder=100, verticalalignment="top",
+                            horizontalalignment="center")
+
+                    for x_position, N in too_low.items():
+                        if not np.isfinite(x_position): continue
+                        ax.text(x_position + .5, y_low, latexify(N), color="r",
+                            fontsize=10, zorder=100, verticalalignment="bottom",
+                            horizontalalignment="center")
+
+        if sort_by is not None and not discretise:
+            _ = np.array([ax.get_xlim() for ax in axes.flatten() if len(ax.collections) > 0])
+            limits = (np.min(_), np.max(_))
+            [ax.set_xlim(limits) for ax in axes.flatten()]
+
+        fig.tight_layout()
+        return fig
+
+
     def solar_comparison(self, element, ion, scaled=False, 
         highlight_flagged=True, show_homogenised=True, bins=20,
         abundance_extent=None, **kwargs):

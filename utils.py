@@ -35,7 +35,7 @@ def calculate_differential_abundances(X, full_output=False):
 
 def load_benchmarks(filename):
 
-    Benchmark = namedtuple('Benchmark', 'name, teff, logg, feh, abundances')
+    Benchmark = namedtuple('Benchmark', 'name, teff, e_teff, e_logg, e_feh, logg, feh, abundances')
 
     with open(filename, "r") as fp:
         data = yaml.load(fp)
@@ -57,6 +57,14 @@ def load_benchmarks(filename):
             cleaned_abundances[species] = (mean, sigma)
 
         kwds = data[name].copy()
+        things = ("teff", "logg", "feh")
+        for thing in things:
+            if thing in kwds:
+                v, e = map(float, kwds[thing].split())
+                kwds[thing] = v
+                kwds["e_{}".format(thing)] = e
+
+
         kwds.setdefault("teff", np.nan)
         kwds.setdefault("logg", np.nan)
         kwds.setdefault("feh", np.nan)
