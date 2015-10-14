@@ -105,6 +105,8 @@ class DataRelease(object):
         return map(str.strip, [] if setups is None else setups)
 
 
+
+
     def _match_node_results(self, columns):
         """
         Match columns from the node results table. This matches measurements on

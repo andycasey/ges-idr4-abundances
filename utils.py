@@ -21,7 +21,7 @@ import data
 def random_string(size=6, chars=string.ascii_uppercase + string.digits):
     return ''.join(choice(chars) for _ in range(size))
 
-def calculate_differential_abundances(X, full_output=True):
+def calculate_differential_abundances(X, full_output=False):
     N_entries, N_nodes = X.shape
     if N_nodes == 1: return (None, [])
     assert 30 > N_nodes, "Are you sure you gave X the right way around?"

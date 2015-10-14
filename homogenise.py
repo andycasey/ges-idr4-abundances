@@ -20,7 +20,8 @@ class AbundanceHomogenisation(object):
 
 
 
-    def node_species(self, element, ion, reference_setup=None, **kwargs):
+    def node_species(self, element, ion, reference_setup=None, clip_iterations=3,
+        clip_limit=3, **kwargs):
         """
         Homogenise the mean node abundances for all stars for a given element
         and ion.
@@ -37,7 +38,6 @@ class AbundanceHomogenisation(object):
         :type ion:
             int
         """
-
         
         # Remove any existing homogenised line or average abundances.
         self.release.execute("""DELETE FROM homogenised_mean_abundances
@@ -45,47 +45,145 @@ class AbundanceHomogenisation(object):
         self.release.execute("""DELETE FROM homogenised_abundances
             WHERE TRIM(element) = %s AND ion = %s""", (element, ion))
 
-        # For each setup, de-bias onto a reference scale?
-        print("NO SETUP-TO-SETUP DEBIASESING")
-
         species = "{0}{1}".format(element.lower().strip(), ion)
         X, (cnames, nodes, setups) = self.release._match_node_results(species)
         X = X[0]
+
+        # De-biases for particular setups (on a per-node, per-setup basis)
+        if reference_setup is not None:
+            reference_setup = reference_setup.strip()
+            index = map(str.strip, setups).index(reference_setup)
+
+            X_reference = X[:, :, index].reshape(X.shape[0], X.shape[1], 1)
+
+            # Calculate the biases (keep them), then apply them to X so we can
+            # estimate the de-biased variances and correlation coefficients.
+            # Note: biases has shape (nodes, setups)
+            biases = np.nanmedian(X - X_reference, axis=0)
+
+            # Apply biases.
+            X -= biases
+
+            # Sigma clip outliers?
+            if clip_iterations > 0 and clip_limit > 0:
+                logger.debug("Clipping {0}-sigma outliers with {1} iterations "\
+                    .format(clip_limit, clip_iterations))
+                logger.debug("Initial sigmas: {0}".format(np.nanstd(X, axis=0)))
+
+                N_outliers = 0
+                for i in range(clip_iterations):
+                    sigmas = np.nanstd(X, axis=0)
+                    deviance = np.abs((X - np.nanmedian(X, axis=0))/sigmas)
+
+                    mask = deviance > clip_limit
+                    N_outliers += np.nansum(mask)
+                    X[mask] = np.nan
+
+                logger.debug("Removed {0} outliers ({1:.2f}%)".format(N_outliers,
+                    100 * float(N_outliers)/X.size))
+                logger.debug("Final sigmas: {0}".format(np.nanstd(X, axis=0)))
+
+        else:
+            biases = np.zeros_like(variances)
+
+        # Calculate line variances for all setups, so that if a given setup does
+        # not have a finite line variance, we can estimate it from some other
+        # setup.
+        setup_variance = np.nan * np.ones(len(setups))
+        setup_measurements \
+            = np.sum(np.isfinite(X).reshape(-1, len(setups)), axis=0)
+
+        for i in np.where(setup_measurements > 0)[0]:
+            X_diff = utils.calculate_differential_abundances(X[:, :, i])
+            value = np.nanvar(np.abs(X_diff))
+            if value > 0 and np.isfinite(value):
+                setup_variance[i] = value
+
+        if not np.any(np.isfinite(setup_variance)):
+            # This element/ion was only measured in one setup by one node.
+            raise a
+
+        else:
+            # Assume the worst.
+            setup_variance[~np.isfinite(setup_variance)] \
+                = np.nanmax(setup_variance)
 
         for i, setup in enumerate(setups):
             # Approximate the node-to-node covariance matrix for this setup, for
             # this particular species.
 
             # Estimate the variance in this species for this setup.
-            line_variance = 0.1**2
-            print("NO ESTIMATE OF VARIANCE")
+            #X_diff = utils.calculate_differential_abundances(X[:, :, i])
+            #line_variance = np.nanvar(np.abs(X_diff))
+
+            #if not np.isfinite(line_variance) or line_variance == 0:
+            #    # Which of the other setups have values?
 
 
+            # Don't waste time looking through each CNAME to see if there are
+            # any abundances that are valid. Do this first.
 
-            # For each CNAME / FILENAME, homogenise this line.
-            for j, cname in enumerate(cnames):
-                
+            relevant_cnames = self.release.retrieve_column("""SELECT DISTINCT ON
+                    (cname) cname 
+                FROM node_results
+                WHERE {species} <> 'NaN' AND TRIM(setup) = '{setup}'""".format(
+                    species=species, setup=setup.strip()), asarray=True)
+            if relevant_cnames is None: relevant_cnames = []
+
+            logger.info("There are {0} CNAMEs with valid {1} {2} abundances in"\
+                " setup {3}".format(len(relevant_cnames), element, ion, setup))
+            if len(relevant_cnames) == 0:
+                continue
+
+            # For each CNAME / FILENAME / SETUP, homogenise the abundance from
+            # all nodes.
+            for cname in relevant_cnames:
                 # The line_abundances function will need the element, ion,
                 # wavelength, the variance in the line measurement, and the
                 # correlation coefficients between nodes (or the matrix to
                 # produce them), and the cname to know where to put things.
                 result = self.mean_abundances(cname, element, ion, setup,
-                    line_variance, X=X[:, :, i].T, X_nodes=nodes)
+                    biases[:, i], setup_variance[i], X=X[:, :, i].T, X_nodes=nodes)
 
 
-            # For each CNAME, homogenise the setup.
-            #for j, cname in enumerate(cnames):
-            #    self.line_abundances(element, ion, cname, wavelength, nodes,
-            #        matrix=X, **kwargs)
 
-        # For this setup, approximate the (node-to-node) covariance matrix.
+        # Need to commit before we can do the averaged results per star.
+        self.release.commit()
 
-        # Then homogenise this setup abundance for all CNAMEs.
+        # Create an index to speed things up.
+        # To prevent parallel problems, first check that the index has not been
+        # created by a parallel homogenisation script.
+        try:    
+            self.release.execute("""CREATE INDEX
+                homogenised_mean_abundances_species_index
+                ON homogenised_mean_abundances (cname, element, ion)""")
+            self.release.commit()
+
+        except:
+            self.release.execute("rollback")
+
+        # To homogenise the spectrum abundances, we will need the correlation
+        # coefficients between each setup.
+
+        # Match the homogenised setup abundances on a per-star basis.
+
+
+
+        #Q, Q_wavelengths = self.release._match_homogenised_line_abundances(
+        #    element, ion, ignore_gaps=False, include_limits=False)
+        #Q_rho = np.atleast_2d(np.ma.corrcoef(Q))
+        Q_rho, Q_setups = None, None
+
+        for j, cname in enumerate(cnames):
+            self.setup_abundances(element, ion, cname, rho=Q_rho,
+                rho_wavelengths=Q_setups, **kwargs)
+
+        self.release.commit()
 
         raise a
 
-    def mean_abundances(self, cname, element, ion, setup, line_variance, X=None,
-        X_nodes=None, **kwargs):
+    def mean_abundances(self, cname, element, ion, setup, biases, line_variance,
+        X=None, X_nodes=None, **kwargs):
         """
         Homogenise the mean abundances for a given element, ion, star and setup.
 
@@ -157,7 +255,6 @@ class AbundanceHomogenisation(object):
                 species=species, setup=setup))
         if measurements is None: return None
 
-        rho, rho_nodes = np.atleast_2d(np.ma.corrcoef(X)), X_nodes
 
         # It's very possible (indeed, likely) for node results data that we
         # won't be able to estimate the covariance between nodes, or even get
@@ -169,47 +266,47 @@ class AbundanceHomogenisation(object):
         # Account for repeat spectra for a single star.
         results = {}
 
-        assert 2 > len(measurements)
 
-        mu, sigma, N_nodes, is_limit = \
-            _homogenise_spectrum_setup_abundances(measurements, line_variance,
-                rho, rho_nodes, **kwargs)
+        measurements = measurements.group_by(["filename"])
+        N = len(measurements.groups)
+        foo = []
+        for group in measurements.groups:
+
+            filenames = group["filename"][0].strip().split("|")
+            stub = ("".join([filenames[0][j] \
+                for j in range(min(map(len, filenames))) \
+                if len(set([item[j] for item in filenames])) == 1]))[:-5]
+
+            assert len(stub) > 0
+
+            biases_ = np.array([biases[list(X_nodes).index(node)] for node in group["node"]])
+            if len(group) > 1:
+                # Get the correlation coefficients from the sample covariance matrix
+                mask = [list(X_nodes).index(node) for node in group["node"]]
+
+                _X = X[mask, :]
+                _X = _X[:, np.all(np.isfinite(_X), axis=0)]
+
+                rho = np.corrcoef(_X)
+                print("RHO", rho[0])
+                rho_nodes = list(group["node"])
+
+            else:
+                rho, rho_nodes = None, X_nodes
+
+            mu, sigma, N_nodes, is_limit = \
+                _homogenise_spectrum_setup_abundances(group, biases_,
+                    line_variance, rho, rho_nodes, **kwargs)
+            
+            foo.append([mu, sigma, N_nodes, is_limit])
+            print(mu, sigma, N_nodes, is_limit)
+
+            self.insert_mean_abundance(element, ion, cname,
+                stub, setup, mu, sigma, N_nodes, is_limit)
         
-        #self.insert_line_abundance(element, ion, cname,
-        #)
-
+        
+        
         '''
-        if X is not None:
-            assert X_nodes is not None
-            assert len(X_nodes) == X.shape[0]
-
-        # Get all valid line abundances for this element, ion, cname.
-        if self.release.config.wavelength_tolerance > 0:   
-            measurements = self.release.retrieve_table("""SELECT * 
-                FROM line_abundances
-                WHERE TRIM(element) = %s AND ion = %s AND cname = %s 
-                AND flags = 0 AND abundance <> 'NaN'
-                AND wavelength >= %s AND wavelength <= %s ORDER BY node ASC""",
-                (element, ion, cname,
-                    wavelength - self.release.config.wavelength_tolerance,
-                    wavelength + self.release.config.wavelength_tolerance))
-        else:
-            measurements = self.release.retrieve_table("""SELECT *
-                FROM line_abundances WHERE TRIM(element) = %s AND ion = %s 
-                AND cname = %s AND flags = 0 AND abundance <> 'NaN'
-                AND wavelength = %s ORDER BY node ASC""",
-                (element, ion, cname, wavelength))
-
-        if measurements is None:
-            logger.warn("No valid {0} {1} measurements at {2} for CNAME = {3}"\
-                .format(element, ion, wavelength, cname))
-            return None
-        
-
-        rho = np.atleast_2d(np.corrcoef(X))
-        rho_nodes = X_nodes
-
-
         # Account for repeat spectra for a single star.
         results = {}
         measurements = measurements.group_by(["spectrum_filename_stub"])
@@ -222,8 +319,6 @@ class AbundanceHomogenisation(object):
             stub = group["spectrum_filename_stub"][0]
             results[stub] = self.insert_line_abundance(element, ion, cname,
                 stub, wavelength, mu, sigma, N_nodes, is_limit)
-
-
             
         return results
 
@@ -490,6 +585,23 @@ class AbundanceHomogenisation(object):
         return results
 
 
+    def setup_abundances(self, element, ion, cname, rho=None,
+        rho_setups=None, **kwargs):
+
+        data = self.release.retrieve_table(
+            """SELECT * FROM homogenised_mean_abundances WHERE trim(element) = %s
+            AND ion = %s AND cname = %s""", (element, ion, cname))
+        if data is None: return
+
+        data = data.group_by(["spectrum_filename_stub"])
+
+        for i, group in enumerate(data.groups):
+
+            raise a
+
+
+        raise a
+
     def spectrum_abundances(self, element, ion, cname, rho=None,
         rho_wavelengths=None, **kwargs):
         """
@@ -604,11 +716,88 @@ class AbundanceHomogenisation(object):
 
                 result = self.insert_spectrum_abundance(element, ion,
                     group["cname"][0], group["spectrum_filename_stub"][0],
-                    mu, np.sqrt(variance), max(group["num_measurements"]),
+                    mu, np.sqrt(variance), -1,
                     N_lines, False)
 
         # TODO: should we average the abundances from multiple spectra?
         return None
+
+
+    def insert_mean_abundance(self, element, ion, cname, spectrum_filename_stub,
+        setup, mu, sigma, N_nodes, is_limit):
+        """
+        Update the homogenised setup abundance for a given CNAME, species and
+        wavelength.
+        
+        :param element:
+            The element name to homogenise.
+
+        :type element:
+            str
+
+        :param ion:
+            The ionisation stage of the element to homogenise (1 = neutral).
+
+        :type ion:
+            int
+
+        :param cname:
+            The CNAME of the star to perform line abundance homogenisation for.
+
+        :type cname:
+            str
+
+        :param setup:
+            The setup the abundance was measured in.
+
+        :type setup:
+            str
+
+        :param mu:
+            The homogenised line abundance.
+
+        :type mu:
+            float
+
+        :param sigma:
+            The 67th percentile (1-sigma uncertainty) in the homogenised line
+            abundance.
+
+        :type sigma:
+            float
+
+        :param N_nodes:
+            The number of node measurements used to produce this line abundance.
+
+        :type N_nodes:
+            int
+
+        :param is_limit:
+            Whether the supplied values are an upper limit or not.
+
+        :type is_limit:
+            bool
+        """
+
+        return self.release.retrieve("""INSERT INTO homogenised_mean_abundances
+            (cname, spectrum_filename_stub, setup, element, ion, abundance,
+            e_abundance, upper_abundance, num_nodes)
+            VALUES (%(cname)s, %(spectrum_filename_stub)s, %(setup)s,
+            %(element)s, %(ion)s, %(abundance)s, %(e_abundance)s,
+            %(upper_abundance)s, %(num_nodes)s)
+            RETURNING id;""", {
+                "spectrum_filename_stub": spectrum_filename_stub,
+                "cname": cname,
+                "setup": setup,
+                "element": element,
+                "ion": ion,
+                "abundance": mu,
+                "e_abundance": sigma,
+                "upper_abundance": int(is_limit),
+                "num_nodes": N_nodes,
+            })[0][0]
+
+
 
 
     def insert_line_abundance(self, element, ion, cname, spectrum_filename_stub,
@@ -778,8 +967,8 @@ class AbundanceHomogenisation(object):
             })[0][0]
 
 
-def _homogenise_spectrum_setup_abundances(measurements, line_variance, rho=None,
-    rho_nodes=None, **kwargs):
+def _homogenise_spectrum_setup_abundances(measurements, biases, line_variance,
+    rho=None, rho_nodes=None, **kwargs):
 
     N_nodes = len(measurements)
 
@@ -792,6 +981,7 @@ def _homogenise_spectrum_setup_abundances(measurements, line_variance, rho=None,
         is_limit = measurements["upper_abundance"] == 1
         limits = measurements["abundance"][is_limit]
         return (np.nanmax(limits), np.nanstd(limits), N_nodes, True)
+
 
     # Build the covariance matrix.
     cov = np.ones((N_nodes, N_nodes))
@@ -835,12 +1025,15 @@ def _homogenise_spectrum_setup_abundances(measurements, line_variance, rho=None,
 
     # Calculate the homogenised values using the optimal weights.
     x = np.array(measurements["abundance"])
+    biases[~np.isfinite(biases)] = 0.
+    x = x - biases
+
     mu = np.sum(w * x)
     sigma = np.sqrt(unbiased_variance(w, cov))
 
     assert sigma > 0
     assert np.all(np.isfinite([mu, sigma]))
-    
+
     return (mu, sigma, N_nodes, False)
     
 
@@ -933,6 +1126,8 @@ def _homogenise_spectrum_line_abundances(measurements, line_variance, rho=None,
 
     w = op.fmin(min_variance, (np.ones(N_nodes)/N_nodes)[:-1], disp=False)
     w = np.append(w, 1 - np.sum(w))
+
+    logger.debug("Weights: {0}".format(w))
 
     # Calculate the homogenised values using the optimal weights.
     x = np.array(measurements[column])
