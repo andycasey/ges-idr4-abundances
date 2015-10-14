@@ -1,5 +1,9 @@
 epsVir:
+  teff: 4983 61
+  logg: 2.77 0.02
+  feh: 0.15 0.15
   abundances:
+    Fe: 7.49 0.15
     Mg: 7.71 0.09
     Si: 7.67 0.05
     Ca: 6.43 0.10
@@ -11,7 +15,11 @@ epsVir:
     Co: 4.86 0.08
     Ni: 6.27 0.06
 muAra:
+  teff: 5902 66
+  logg: 4.3 0.03
+  feh: 0.35 0.01
   abundances:
+    Fe: 7.15 0.01
     Mg: 8.01 0.04
     Si: 7.82 0.04
     Ca: 6.64 0.05
@@ -23,7 +31,11 @@ muAra:
     Co: 5.31 0.03
     Ni: 6.60 0.05
 Sun:
+  teff: 5777 1
+  logg: 4.4381 0.0002
+  feh: 0.03 0.01
   abundances:
+    Fe: 7.47 0.01
     Mg: 7.65 0.08
     Si: 7.49 0.08
     Ca: 6.32 0.09
@@ -35,7 +47,11 @@ Sun:
     Co: 4.89 0.09
     Ni: 6.18 0.10
 HD107328:
+  teff: 4496 59
+  logg: 2.09 0.14
+  feh: -0.33 0.16
   abundances:
+    Fe: 7.83 0.16
     Mg: 7.57 0.07
     Si: 7.37 0.05
     Ca: 6.00 0.07
@@ -47,7 +63,11 @@ HD107328:
     Co: 4.71 0.02
     Ni: 5.86 0.03
 HD122563:
+  teff: 4587 60
+  logg: 1.61 0.07
+  feh: -2.64 0.02
   abundances:
+    Fe: 10.14 0.02
     Mg: 5.30 0.05
     Si: 5.16 0.08
     Ca: 3.89 0.08
@@ -59,7 +79,11 @@ HD122563:
     Co: 2.25 NaN
     Ni: 3.49 0.10
 18Sco:
+  teff: 5810 80
+  logg: 4.44 0.03
+  feh: 0.03 0.01
   abundances:
+    Fe: 7.47 0.01
     Mg: 7.69 0.04
     Si: 7.54 0.02
     Ca: 6.38 0.04
@@ -71,7 +95,11 @@ HD122563:
     Co: 4.91 0.02
     Ni: 6.22 0.02
 delEri:
+  teff: 4954 26
+  logg: 3.75 0.02
+  feh: 0.06 0.01
   abundances:
+    Fe: 7.44 0.01
     Mg: 7.83 0.09
     Si: 7.63 0.06
     Ca: 6.34 0.09
@@ -83,7 +111,11 @@ delEri:
     Co: 4.96 0.04
     Ni: 6.27 0.06
 HD49933:
+  teff: 6635 91
+  logg: 4.2 0.03
+  feh: -0.41 0.05
   abundances:
+    Fe: 7.91 0.05
     Mg: 7.29 0.05
     Si: 7.11 0.08
     Ca: 5.98 0.08
@@ -92,10 +124,14 @@ HD49933:
     V: 3.67 0.09
     Cr: 5.05 0.08
     Mn: 4.69 0.07
-    Co: 99.00 0.00
+    Co: NaN NaN
     Ni: 5.65 0.10
 61CygA:
+  teff: 4374 22
+  logg: 4.63 0.04
+  feh: -0.33 0.02
   abundances:
+    Fe: 7.83 0.02
     Mg: 7.47 0.08
     Si: 7.20 0.09
     Ca: 5.96 0.10
@@ -107,7 +143,11 @@ HD49933:
     Co: 4.59 0.20
     Ni: 5.79 0.10
 61CygB:
+  teff: 4044 32
+  logg: 4.67 0.04
+  feh: -0.38 0.03
   abundances:
+    Fe: 7.88 0.03
     Mg: 7.59 0.07
     Si: 7.16 0.18
     Ca: 5.92 0.06
@@ -119,7 +159,11 @@ HD49933:
     Co: 4.55 0.15
     Ni: 5.75 0.08
 betHyi:
+  teff: 5873 45
+  logg: 3.98 0.02
+  feh: -0.04 0.01
   abundances:
+    Fe: 7.54 0.01
     Mg: 7.61 0.04
     Si: 7.42 0.03
     Ca: 6.26 0.06
@@ -131,7 +175,11 @@ betHyi:
     Co: 4.81 0.03
     Ni: 6.09 0.03
 muLeo:
+  teff: 4474 60
+  logg: 2.51 0.09
+  feh: 0.25 0.13
   abundances:
+    Fe: 7.25 0.13
     Mg: 8.12 0.11
     Si: 8.01 0.09
     Ca: 6.60 0.12
@@ -143,7 +191,11 @@ muLeo:
     Co: 5.34 0.09
     Ni: 6.50 0.12
 muCas:
+  teff: 5308 29
+  logg: 4.41 0.01
+  feh: -0.81 0.02
   abundances:
+    Fe: 8.31 0.02
     Mg: 7.20 0.05
     Si: 6.91 0.06
     Ca: 5.75 0.04
@@ -155,7 +207,11 @@ muCas:
     Co: 4.17 0.04
     Ni: 5.35 0.04
 Gmb1830:
+  teff: 4827 55
+  logg: 4.6 0.03
+  feh: -1.46 0.31
   abundances:
+    Fe: 8.96 0.31
     Mg: 6.51 0.06
     Si: 6.34 0.09
     Ca: 5.08 0.06
@@ -167,7 +223,11 @@ Gmb1830:
     Co: 3.51 0.12
     Ni: 4.68 0.13
 betGem:
+  teff: 4858 60
+  logg: 2.9 0.06
+  feh: 0.13 0.13
   abundances:
+    Fe: 7.37 0.13
     Mg: 7.56 0.07
     Si: 7.63 0.05
     Ca: 6.40 0.08
@@ -179,7 +239,11 @@ betGem:
     Co: 4.91 0.05
     Ni: 6.26 0.05
 alfCet:
+  teff: 3796 65
+  logg: 0.68 0.29
+  feh: -0.45 0.39
   abundances:
+    Fe: 7.95 0.39
     Mg: 7.38 0.11
     Si: 6.97 0.10
     Ca: 5.86 0.13
@@ -191,7 +255,11 @@ alfCet:
     Co: 4.56 0.13
     Ni: 5.54 0.16
 HD220009:
+  teff: 4275 54
+  logg: 1.47 0.14
+  feh: -0.74 0.07
   abundances:
+    Fe: 8.24 0.07
     Mg: 7.30 0.04
     Si: 7.02 0.05
     Ca: 5.83 0.05
@@ -203,7 +271,11 @@ HD220009:
     Co: 4.22 0.04
     Ni: 5.44 0.05
 alfTau:
+  teff: 3927 40
+  logg: 1.11 0.15
+  feh: -0.37 0.12
   abundances:
+    Fe: 7.87 0.12
     Mg: 7.48 0.15
     Si: 7.31 0.17
     Ca: 5.98 0.06
@@ -215,7 +287,11 @@ alfTau:
     Co: 4.64 0.18
     Ni: 5.78 0.21
 tauCet:
+  teff: 5414 21
+  logg: 4.49 0.01
+  feh: -0.49 0.01
   abundances:
+    Fe: 7.99 0.01
     Mg: 7.43 0.03
     Si: 7.14 0.03
     Ca: 6.03 0.05
@@ -227,7 +303,11 @@ tauCet:
     Co: 4.54 0.03
     Ni: 5.73 0.04
 etaBoo:
+  teff: 6099 28
+  logg: 3.8 0.02
+  feh: 0.32 0.01
   abundances:
+    Fe: 7.18 0.01
     Mg: 8.02 0.09
     Si: 7.85 0.10
     Ca: 6.61 0.10
@@ -239,7 +319,11 @@ etaBoo:
     Co: 5.21 0.06
     Ni: 6.51 0.09
 HD22879:
+  teff: 5868 89
+  logg: 4.27 0.03
+  feh: -0.86 0.03
   abundances:
+    Fe: 8.36 0.03
     Mg: 7.17 0.06
     Si: 6.90 0.08
     Ca: 5.79 0.05
@@ -251,7 +335,11 @@ HD22879:
     Co: 4.15 0.03
     Ni: 5.33 0.09
 epsFor:
+  teff: 5123 78
+  logg: 3.52 0.07
+  feh: -0.6 0.01
   abundances:
+    Fe: 8.1 0.01
     Mg: 7.44 0.05
     Si: 7.11 0.04
     Ca: 6.05 0.06
@@ -263,7 +351,11 @@ epsFor:
     Co: 4.42 0.04
     Ni: 5.64 0.06
 betAra:
+  teff: 4173 64
+  logg: 1.04 0.15
+  feh: -0.05 0.17
   abundances:
+    Fe: 7.55 0.17
     Mg: 7.78 0.04
     Si: 7.72 0.17
     Ca: 6.18 0.08
@@ -271,23 +363,31 @@ betAra:
     Sc: 2.50 0.21
     V: 3.46 0.09
     Cr: 5.36 0.17
-    Mn: 99.00 0.00
+    Mn: NaN NaN
     Co: 4.81 0.10
     Ni: 6.04 0.25
 HD140283:
+  teff: 5514 120
+  logg: 3.57 0.12
+  feh: -2.36 0.04
   abundances:
+    Fe: 9.86 0.04
     Mg: 5.32 0.05
     Si: 5.24 0.04
     Ca: 4.01 0.09
     Ti: 2.48 0.06
     Sc: 0.55 NaN
-    V: 99.00 0.00
+    V: NaN NaN
     Cr: 2.69 0.13
     Mn: 2.52 NaN
-    Co: 99.00 0.00
+    Co: NaN NaN
     Ni: 3.57 0.08
 Procyon:
+  teff: NaN NaN
+  logg: NaN NaN
+  feh: NaN NaN
   abundances:
+    Fe: NaN NaN
     Mg: 7.61 0.07
     Si: 7.46 0.07
     Ca: 6.36 0.06
@@ -299,7 +399,11 @@ Procyon:
     Co: 4.79 0.02
     Ni: 6.07 0.07
 Arcturus:
+  teff: 4286 35
+  logg: 1.64 0.06
+  feh: -0.52 0.06
   abundances:
+    Fe: 8.02 0.06
     Mg: 7.49 0.09
     Si: 7.24 0.05
     Ca: 5.91 0.12
@@ -311,19 +415,27 @@ Arcturus:
     Co: 4.48 0.05
     Ni: 5.69 0.08
 HD84937:
-  abundances:
+  teff: NaN NaN
+  logg: NaN NaN
+  feh: NaN NaN
+  abundances: 
+    Fe: NaN NaN
     Mg: 5.89 0.11
     Si: 5.76 0.18
     Ca: 4.66 0.08
     Ti: 3.24 0.11
     Sc: 1.33 0.15
-    V: 99.00 0.00
+    V: NaN NaN
     Cr: 3.35 0.07
-    Mn: 99.00 0.00
-    Co: 99.00 0.00
+    Mn: NaN NaN
+    Co: NaN NaN
     Ni: 4.12 0.12
 betVir:
+  teff: 6083 41
+  logg: 4.1 0.02
+  feh: 0.24 0.01
   abundances:
+    Fe: 7.26 0.01
     Mg: 7.74 0.06
     Si: 7.62 0.04
     Ca: 6.45 0.05
@@ -335,19 +447,27 @@ betVir:
     Co: 4.97 0.04
     Ni: 6.29 0.03
 psiPhe:
+  teff: 3472 92
+  logg: 0.51 0.18
+  feh: -1.24 0.31
   abundances:
-    Mg: 99.00 0.00
-    Si: 99.00 0.00
+    Fe: 8.74 0.31
+    Mg: NaN NaN
+    Si: NaN NaN
     Ca: 5.63 0.29
     Ti: 4.01 0.33
     Sc: 2.55 0.51
     V: 2.75 0.35
     Cr: 4.74 0.10
-    Mn: 99.00 0.00
+    Mn: NaN NaN
     Co: 4.27 0.36
     Ni: 4.96 0.39
 alfCenB:
+  teff: 5231 20
+  logg: 4.53 0.03
+  feh: 0.22 0.02
   abundances:
+    Fe: 7.28 0.02
     Mg: 7.95 0.09
     Si: 7.72 0.04
     Ca: 6.55 0.05
@@ -359,7 +479,11 @@ alfCenB:
     Co: 5.18 0.03
     Ni: 6.45 0.05
 epsEri:
+  teff: 5076 30
+  logg: 4.6 0.03
+  feh: -0.09 0.01
   abundances:
+    Fe: 7.59 0.01
     Mg: 7.57 0.10
     Si: 7.39 0.10
     Ca: 6.26 0.07
@@ -371,7 +495,11 @@ epsEri:
     Co: 4.69 0.16
     Ni: 6.00 0.08
 alfCenA:
+  teff: 5792 16
+  logg: 4.3 0.01
+  feh: 0.26 0.01
   abundances:
+    Fe: 7.24 0.01
     Mg: 7.89 0.05
     Si: 7.74 0.03
     Ca: 6.51 0.03
@@ -383,7 +511,11 @@ alfCenA:
     Co: 5.16 0.03
     Ni: 6.43 0.03
 gamSge:
+  teff: 3807 49
+  logg: 1.05 0.34
+  feh: -0.17 0.27
   abundances:
+    Fe: 7.67 0.27
     Mg: 7.69 0.10
     Si: 7.64 0.10
     Ca: 6.03 0.09
@@ -391,11 +523,15 @@ gamSge:
     Sc: 2.90 0.29
     V: 3.62 0.16
     Cr: 5.43 0.06
-    Mn: 99.00 0.00
+    Mn: NaN NaN
     Co: 4.79 0.09
     Ni: 6.01 0.13
 ksiHya:
+  teff: 5044 38
+  logg: 2.87 0.02
+  feh: 0.16 0.17
   abundances:
+    Fe: 7.34 0.17
     Mg: 7.68 0.11
     Si: 7.57 0.06
     Ca: 6.39 0.07
